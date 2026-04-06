@@ -1,0 +1,36 @@
+name: Crawl Hermes Registry
+
+on:
+  schedule:
+    - cron: '0 2 * * *'  # Daily at 2 AM UTC
+  workflow_dispatch:  # Manual trigger
+
+jobs:
+  crawl:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install axios
+        working-directory: crawler
+
+      - name: Run crawler
+        run: node scripts/crawl-hermes-agents.js
+        working-directory: crawler
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          API_BASE_URL: ${{ secrets.API_BASE_URL }}
+
+      - name: Report status
+        if: always()
+        run: |
+          echo "Crawl completed at $(date -u)"
+          echo "API: $API_BASE_URL"
+        env:
+          API_BASE_URL: ${{ secrets.API_BASE_URL }}
