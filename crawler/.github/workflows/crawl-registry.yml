@@ -24,13 +24,13 @@ jobs:
         run: node scripts/crawl-hermes-agents.js
         working-directory: crawler
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          API_BASE_URL: ${{ secrets.API_BASE_URL }}
+          GH_PAT: ${{ secrets.GH_PAT }}
+          CRAWLER_API_URL: ${{ secrets.CRAWLER_API_URL }}
 
       - name: Report status
         if: always()
         run: |
           echo "Crawl completed at $(date -u)"
-          echo "API: $API_BASE_URL"
+          echo "API: $CRAWLER_API_URL"
         env:
-          API_BASE_URL: ${{ secrets.API_BASE_URL }}
+          CRAWLER_API_URL: ${{ secrets.CRAWLER_API_URL }}

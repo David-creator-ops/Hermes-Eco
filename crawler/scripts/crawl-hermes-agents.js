@@ -8,8 +8,8 @@
 
 const axios = require('axios');
 
-const GITHUB_TOKEN = process.env.GITHUB_TOKEN || '';
-const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:3001';
+const GH_PAT = process.env.GH_PAT || '';
+const CRAWLER_API_URL = process.env.CRAWLER_API_URL || 'http://localhost:3001';
 
 const VERIFICATION_CHECKS = [
   { key: 'has_hermes_dependency', label: 'Has Hermes dependency' },
@@ -26,7 +26,7 @@ async function githubRequest(url) {
   try {
     const resp = await axios.get(url, {
       headers: {
-        Authorization: `token ${GITHUB_TOKEN}`,
+        Authorization: `token ${GH_PAT}`,
         Accept: 'application/vnd.github.v3+json',
       },
       timeout: 15000,
@@ -197,11 +197,11 @@ function getSlug(name) {
 
 async function main() {
   console.log('Starting Hermes Registry Crawler...');
-  console.log(`API: ${API_BASE_URL}`);
+  console.log(`API: ${CRAWLER_API_URL}`);
   console.log(`Time: ${new Date().toISOString()}`);
 
-  if (!GITHUB_TOKEN) {
-    console.error('ERROR: GITHUB_TOKEN environment variable is not set.');
+  if (!GH_PAT) {
+    console.error('ERROR: GH_PAT environment variable is not set.');
     process.exit(1);
   }
 
@@ -279,7 +279,7 @@ async function main() {
         };
 
         // Post to API
-        const resp = await axios.post(`${API_BASE_URL}/api/crawler/upsert`, agentEntry, {
+        const resp = await axios.post(`${CRAWLER_API_URL}/api/crawler/upsert`, agentEntry, {
           headers: { 'Content-Type': 'application/json' },
           timeout: 10000,
         });
