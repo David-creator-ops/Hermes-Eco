@@ -1,0 +1,10 @@
+{
+  "name": "Hermes Eco Registry",
+  "type": "integration",
+  "description": "The central registry for the Hermes Agent ecosystem.",
+  "author": "David-creator-ops",
+  "license": "MIT",
+  "repository": "https://github.com/David-creator-ops/Hermes-Eco",
+  "homepage": "https://hermes-eco-frontend.vercel.app",
+  "homepage_url": "https://hermes-eco-frontend.vercel.app"
+}
