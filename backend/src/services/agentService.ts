@@ -103,6 +103,12 @@ export async function getAgentsByResourceType(resourceType: string, n = 10) {
   return (await db.prepare('SELECT * FROM agents WHERE resource_type = ? AND is_archived = 0 ORDER BY stars DESC LIMIT ?').all(resourceType, n)).map(parse);
 }
 
+function vals(n: number) {
+  const parts: string[] = [];
+  for (let i = 0; i < n; i++) parts.push('$' + (i + 1));
+  return parts.join(',');
+}
+
 export async function upsertAgent(data: {
   name: string; slug: string; resource_type: string; type: string; description: string; long_description?: string;
   author_github: string; repository_url: string; homepage_url?: string; license?: string;
@@ -114,38 +120,58 @@ export async function upsertAgent(data: {
   stars: number; forks: number; watchers: number; last_commit_date?: string;
 }) {
   const now = new Date().toISOString();
-  await db.prepare(`
-    INSERT INTO agents (
-      name, slug, resource_type, type, description, long_description,
-      author_github, repository_url, homepage_url, license, hermes_version_required,
-      tier1_category, tier1_subcategory, tier2_categories, use_cases,
-      complexity_level, deployment_type, required_skills, external_dependencies, maintenance_status,
-      tags, tools_used, verification_status, verification_score,
-      verification_checks, stars, forks, watchers,
-      updated_at, last_crawled
-    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30)
-    ON CONFLICT(repository_url) DO UPDATE SET
-      name=excluded.name, description=excluded.description,
-      tags=excluded.tags, tools_used=excluded.tools_used,
-      verification_status=excluded.verification_status,
-      verification_score=excluded.verification_score,
-      verification_checks=excluded.verification_checks,
-      stars=excluded.stars, forks=excluded.forks, watchers=excluded.watchers,
-      updated_at=excluded.updated_at, is_archived=0
-  `).run(
-    data.name, data.slug, data.resource_type, data.type, data.description, data.long_description ?? null,
-    data.author_github, data.repository_url, data.homepage_url ?? null,
-    data.license ?? null, data.hermes_version_required ?? null,
-    data.tier1_category ?? null, data.tier1_subcategory ?? null,
-    JSON.stringify(data.tier2_categories ?? []), JSON.stringify(data.use_cases ?? []),
-    data.complexity_level ?? null, data.deployment_type ?? null,
-    JSON.stringify(data.required_skills ?? []), JSON.stringify(data.external_dependencies ?? []),
-    data.maintenance_status ?? 'active',
-    JSON.stringify(data.tags ?? []), JSON.stringify(data.tools_used ?? []),
-    data.verification_status, data.verification_score, JSON.stringify(data.verification_checks ?? {}),
-    data.stars, data.forks, data.watchers,
-    now, now
-  );
+  const existing = await db.prepare('SELECT id FROM agents WHERE repository_url = ?').get(data.repository_url);
+
+  if (existing) {
+    // UPDATE
+    await db.prepare(`
+      UPDATE agents SET
+        name=?, slug=?, resource_type=?, type=?, description=?, long_description=?,
+        author_github=?, homepage_url=?, license=?, hermes_version_required=?,
+        tier1_category=?, tier1_subcategory=?, tier2_categories=?, use_cases=?,
+        complexity_level=?, deployment_type=?, required_skills=?, external_dependencies=?,
+        maintenance_status=?, tags=?, tools_used=?, verification_status=?,
+        verification_score=?, verification_checks=?,
+        stars=?, forks=?, watchers=?, updated_at=?, last_crawled=?, is_archived=0
+      WHERE repository_url=?
+    `).run(
+      data.name, data.slug, data.resource_type, data.type, data.description, data.long_description ?? null,
+      data.author_github, data.homepage_url ?? null, data.license ?? null, data.hermes_version_required ?? null,
+      data.tier1_category ?? null, data.tier1_subcategory ?? null,
+      JSON.stringify(data.tier2_categories ?? []), JSON.stringify(data.use_cases ?? []),
+      data.complexity_level ?? null, data.deployment_type ?? null,
+      JSON.stringify(data.required_skills ?? []), JSON.stringify(data.external_dependencies ?? []),
+      data.maintenance_status ?? 'active',
+      JSON.stringify(data.tags ?? []), JSON.stringify(data.tools_used ?? []),
+      data.verification_status, data.verification_score, JSON.stringify(data.verification_checks ?? {}),
+      data.stars, data.forks, data.watchers, now, now, data.repository_url
+    );
+  } else {
+    // INSERT
+    await db.prepare(`
+      INSERT INTO agents (
+        name, slug, resource_type, type, description, long_description,
+        author_github, repository_url, homepage_url, license, hermes_version_required,
+        tier1_category, tier1_subcategory, tier2_categories, use_cases,
+        complexity_level, deployment_type, required_skills, external_dependencies, maintenance_status,
+        tags, tools_used, verification_status, verification_score,
+        verification_checks, stars, forks, watchers,
+        updated_at, last_crawled
+      ) VALUES (${vals(30)})
+    `).run(
+      data.name, data.slug, data.resource_type, data.type, data.description, data.long_description ?? null,
+      data.author_github, data.repository_url, data.homepage_url ?? null,
+      data.license ?? null, data.hermes_version_required ?? null,
+      data.tier1_category ?? null, data.tier1_subcategory ?? null,
+      JSON.stringify(data.tier2_categories ?? []), JSON.stringify(data.use_cases ?? []),
+      data.complexity_level ?? null, data.deployment_type ?? null,
+      JSON.stringify(data.required_skills ?? []), JSON.stringify(data.external_dependencies ?? []),
+      data.maintenance_status ?? 'active',
+      JSON.stringify(data.tags ?? []), JSON.stringify(data.tools_used ?? []),
+      data.verification_status, data.verification_score, JSON.stringify(data.verification_checks ?? {}),
+      data.stars, data.forks, data.watchers, now, now
+    );
+  }
 }
 
 export async function getResourceStats() {
