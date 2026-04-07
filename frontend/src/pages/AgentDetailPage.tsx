@@ -158,9 +158,7 @@ export function AgentDetailPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                 {checkList.map(c => {
                   const ok = !!checks[c.key];
-                  const isFeatured = a.is_featured === 1;
-
-  return (
+                  return (
                     <div key={c.key} className={`flex items-center gap-2 px-3 py-2 rounded-md text-[12px] ${ok ? 'text-[#888]' : 'text-[#444]'}`}>
                       {ok ? <CheckCircle className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" /> : <XCircle className="w-3.5 h-3.5 text-[#333] flex-shrink-0" />}
                       {c.label}
