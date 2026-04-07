@@ -20,6 +20,9 @@ const NODE_ENV = process.env.NODE_ENV || 'development';
 app.use(cors());
 app.use(express.json());
 
+// Trust Railway proxy to fix rate limiter X-Forwarded-For errors
+app.set('trust proxy', 1);
+
 const publicLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
