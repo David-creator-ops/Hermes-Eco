@@ -34,7 +34,7 @@ function validateSubmission(data: any) {
 }
 
 // POST /api/submit
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
   try {
     const data = req.body;
 
@@ -61,17 +61,17 @@ router.post('/', (req, res) => {
       .trim();
 
     // Check if already exists
-    await const existing = db.prepare('SELECT id FROM agents WHERE repository_url = ?').get(repository) as any;
+    const existing = await db.prepare('SELECT id FROM agents WHERE repository_url = ?').get(repository) as any;
     if (existing) return res.status(409).json({ error: 'Resource already exists in the registry', existing_id: existing.id });
 
     // Insert into submissions
-    const result = db.prepare(`
+    const result = await db.prepare(`
       INSERT INTO submissions (
         source, resource_name, resource_type, primary_category, description,
         author_github, repository_url, license, complexity, deployment, tags,
         status
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
-    await `).run(
+    `).run(
       'web_form',
       name,
       type,
@@ -98,11 +98,11 @@ router.post('/', (req, res) => {
 });
 
 // GET /api/submit/stats
-await router.get('/stats', (req, res) => {
+router.get('/stats', async (req, res) => {
   try {
-    await const total = db.prepare('SELECT COUNT(*) as total FROM submissions').get() as any;
-    await const bySource = db.prepare('SELECT source, COUNT(*) as c FROM submissions GROUP BY source ORDER BY c DESC').all() as any[];
-    await const byStatus = db.prepare('SELECT status, COUNT(*) as c FROM submissions GROUP BY status').all() as any[];
+    const total = await db.prepare('SELECT COUNT(*) as total FROM submissions').get() as any;
+    const bySource = await db.prepare('SELECT source, COUNT(*) as c FROM submissions GROUP BY source ORDER BY c DESC').all() as any[];
+    const byStatus = await db.prepare('SELECT status, COUNT(*) as c FROM submissions GROUP BY status').all() as any[];
     res.json({ data: { total: total.total, by_source: bySource, by_status: byStatus } });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -110,9 +110,9 @@ await router.get('/stats', (req, res) => {
 });
 
 // GET /api/submit/all (for admin use)
-await router.get('/all', (req, res) => {
+router.get('/all', async (req, res) => {
   try {
-    await const submissions = db.prepare('SELECT * FROM submissions ORDER BY submitted_at DESC LIMIT 100').all() as any[];
+    const submissions = await db.prepare('SELECT * FROM submissions ORDER BY submitted_at DESC LIMIT 100').all() as any[];
     res.json({ data: submissions });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -120,25 +120,23 @@ await router.get('/all', (req, res) => {
 });
 
 // POST /api/submit/batch (for crawler)
-router.post('/batch', (req, res) => {
+router.post('/batch', async (req, res) => {
   try {
     const items = req.body.items || [];
     let count = 0;
-
-    const ins = db.prepare(`
-      INSERT OR IGNORE INTO submissions (
-        source, resource_name, resource_type, primary_category, description,
-        author_github, repository_url, license, complexity, deployment, tags,
-        status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
-    `);
 
     for (const item of items) {
       const name = sanitizeName(item.name || '');
       const repoUrl = item.repository_url ? sanitizeGithubUrl(item.repository_url) : (item.repository ? sanitizeGithubUrl(item.repository) : null);
       const desc = sanitizeDescription(item.description || '');
 
-      await ins.run(
+      await db.prepare(`
+        INSERT INTO submissions (
+          source, resource_name, resource_type, primary_category, description,
+          author_github, repository_url, license, complexity, deployment, tags,
+          status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+      `).run(
         item.source || 'github_crawler',
         name,
         item.type || 'agent',
@@ -162,7 +160,7 @@ router.post('/batch', (req, res) => {
 
 
 // POST /api/submit/featured (featured request form)
-router.post('/featured', (req, res) => {
+router.post('/featured', async (req, res) => {
   try {
     const { resource_name, github_url, email, message } = req.body;
 
@@ -183,12 +181,12 @@ router.post('/featured', (req, res) => {
     }
 
     // Check if this GitHub URL already exists in agents
-    await const existing = db.prepare('SELECT id FROM agents WHERE repository_url = ?').get(cleanUrl) as any;
+    const existing = await db.prepare('SELECT id FROM agents WHERE repository_url = ?').get(cleanUrl) as any;
 
-    db.prepare(
+    await db.prepare(
       `INSERT INTO featured_requests (resource_name, github_url, email, message, resource_id, status)
        VALUES (?, ?, ?, ?, ?, 'pending')`
-    await ).run(cleanName, cleanUrl, cleanEmail, cleanMessage || null, existing?.id || null);
+    ).run(cleanName, cleanUrl, cleanEmail, cleanMessage || null, existing?.id || null);
 
     res.json({ data: { message: 'Featured request received! We will review it and contact you.' } });
   } catch (err: any) {
@@ -197,10 +195,10 @@ router.post('/featured', (req, res) => {
 });
 
 // GET /api/submit/featured (public: get wallet + pricing)
-await router.get('/featured', (req, res) => {
+router.get('/featured', async (req, res) => {
   try {
-    await const wallet = db.prepare("SELECT value FROM crawler_settings WHERE key = 'solana_usdc_wallet'").get() as any;
-    await const price = db.prepare("SELECT value FROM crawler_settings WHERE key = 'featured_price_usdc'").get() as any;
+    const wallet = await db.prepare("SELECT value FROM crawler_settings WHERE key = 'solana_usdc_wallet'").get() as any;
+    const price = await db.prepare("SELECT value FROM crawler_settings WHERE key = 'featured_price_usdc'").get() as any;
     res.json({
       data: {
         wallet: wallet?.value || '',

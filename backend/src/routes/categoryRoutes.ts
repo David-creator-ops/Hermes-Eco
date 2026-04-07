@@ -3,19 +3,20 @@ import * as catService from '../services/categoryService';
 
 const router = Router();
 
-await router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   try {
-    res.json({ data: catService.getAllCategories() });
+    const data = await catService.getAllCategories();
+    res.json({ data });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
 });
 
-await router.get('/:slug', (req, res) => {
+router.get('/:slug', async (req, res) => {
   try {
-    const cat = catService.getCategoryBySlug(req.params.slug);
+    const cat = await catService.getCategoryBySlug(req.params.slug);
     if (!cat) return res.status(404).json({ error: 'Category not found' });
-    const agents = catService.getAgentsByCategory(req.params.slug);
+    const agents = await catService.getAgentsByCategory(req.params.slug);
     res.json({ data: { ...cat, agents: agents.agents }, total: agents.total });
   } catch (err: any) {
     res.status(500).json({ error: err.message });

@@ -3,9 +3,9 @@ import * as agentService from '../services/agentService';
 
 const router = Router();
 
-await router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   try {
-    const result = agentService.listAgents({
+    const result = await agentService.listAgents({
       page: parseInt(req.query.page as string || '1'),
       limit: parseInt(req.query.limit as string || '20'),
       sort: req.query.sort as string,
@@ -28,36 +28,36 @@ await router.get('/', (req, res) => {
   }
 });
 
-await router.get('/resource-type/:type', (req, res) => {
+router.get('/resource-type/:type', async (req, res) => {
   try {
-    const agents = agentService.getAgentsByResourceType(req.params.type);
+    const agents = await agentService.getAgentsByResourceType(req.params.type);
     res.json({ data: agents });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
 });
 
-await router.get('/featured', (req, res) => {
+router.get('/featured', async (req, res) => {
   try {
-    const agents = agentService.getFeaturedAgents(4);
+    const agents = await agentService.getFeaturedAgents(4);
     res.json({ data: agents });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
 });
 
-await router.get('/recent', (req, res) => {
+router.get('/recent', async (req, res) => {
   try {
-    const agents = agentService.getRecentAgents(10);
+    const agents = await agentService.getRecentAgents(10);
     res.json({ data: agents });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
 });
 
-await router.get('/id/:id', (req, res) => {
+router.get('/id/:id', async (req, res) => {
   try {
-    const agent = agentService.getAgentById(parseInt(req.params.id));
+    const agent = await agentService.getAgentById(parseInt(req.params.id));
     if (!agent) return res.status(404).json({ error: 'Resource not found' });
     res.json({ data: agent });
   } catch (err: any) {
@@ -65,9 +65,9 @@ await router.get('/id/:id', (req, res) => {
   }
 });
 
-await router.get('/slug/:slug', (req, res) => {
+router.get('/slug/:slug', async (req, res) => {
   try {
-    const agent = agentService.getAgentBySlug(req.params.slug);
+    const agent = await agentService.getAgentBySlug(req.params.slug);
     if (!agent) return res.status(404).json({ error: 'Resource not found' });
     res.json({ data: agent });
   } catch (err: any) {

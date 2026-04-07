@@ -20,7 +20,7 @@ interface ListOpts {
   tools_used?: string; tags?: string; search?: string; category_slug?: string;
 }
 
-export function listAgents(opts: ListOpts = {}) {
+export async function listAgents(opts: ListOpts = {}) {
   const page = opts.page || 1;
   const limit = Math.min(opts.limit || 20, 100);
   const offset = (page - 1) * limit;
@@ -70,37 +70,37 @@ export function listAgents(opts: ListOpts = {}) {
   }
 
   const where = w.join(' AND ');
-  await const count: any = db.prepare(`SELECT COUNT(*) as total FROM agents a ${join} WHERE ${where}`).get(...p);
-  const rows = db.prepare(
+  const count: any = await db.prepare(`SELECT COUNT(*) as total FROM agents a ${join} WHERE ${where}`).get(...p);
+  const rows = await db.prepare(
     `SELECT a.* FROM agents a ${join} WHERE ${where} ${extra} ORDER BY ${sortCol} LIMIT ? OFFSET ?`
-  await ).all(...p, ...searchParams, limit, offset) as any[];
+  ).all(...p, ...searchParams, limit, offset) as any[];
 
   return { agents: rows.map(parse), total: count.total, page, limit };
 }
 
-export function getAgentById(id: number) {
-  await const row = db.prepare('SELECT * FROM agents WHERE id = ? AND is_archived = 0').get(id) as any;
+export async function getAgentById(id: number) {
+  const row = await db.prepare('SELECT * FROM agents WHERE id = ? AND is_archived = 0').get(id) as any;
   return row ? parse(row) : null;
 }
 
-export function getAgentBySlug(slug: string) {
-  await const row = db.prepare('SELECT * FROM agents WHERE slug = ? AND is_archived = 0').get(slug) as any;
+export async function getAgentBySlug(slug: string) {
+  const row = await db.prepare('SELECT * FROM agents WHERE slug = ? AND is_archived = 0').get(slug) as any;
   return row ? parse(row) : null;
 }
 
-export function getFeaturedAgents(n = 4) {
-  await return db.prepare('SELECT * FROM agents WHERE is_featured = 1 AND is_archived = 0 ORDER BY stars DESC LIMIT ?').all(n).map(parse);
+export async function getFeaturedAgents(n = 4) {
+  return (await db.prepare('SELECT * FROM agents WHERE is_featured = 1 AND is_archived = 0 ORDER BY stars DESC LIMIT ?').all(n)).map(parse);
 }
 
-export function getRecentAgents(n = 10) {
-  await return db.prepare('SELECT * FROM agents WHERE is_archived = 0 ORDER BY created_at DESC LIMIT ?').all(n).map(parse);
+export async function getRecentAgents(n = 10) {
+  return (await db.prepare('SELECT * FROM agents WHERE is_archived = 0 ORDER BY created_at DESC LIMIT ?').all(n)).map(parse);
 }
 
-export function getAgentsByResourceType(resourceType: string, n = 10) {
-  await return db.prepare('SELECT * FROM agents WHERE resource_type = ? AND is_archived = 0 ORDER BY stars DESC LIMIT ?').all(resourceType, n).map(parse);
+export async function getAgentsByResourceType(resourceType: string, n = 10) {
+  return (await db.prepare('SELECT * FROM agents WHERE resource_type = ? AND is_archived = 0 ORDER BY stars DESC LIMIT ?').all(resourceType, n)).map(parse);
 }
 
-export function upsertAgent(data: {
+export async function upsertAgent(data: {
   name: string; slug: string; resource_type: string; type: string; description: string; long_description?: string;
   author_github: string; repository_url: string; homepage_url?: string; license?: string;
   hermes_version_required?: string; tier1_category?: string; tier1_subcategory?: string;
@@ -110,7 +110,7 @@ export function upsertAgent(data: {
   verification_status: string; verification_checks: Record<string, boolean>;
   stars: number; forks: number; watchers: number; last_commit_date?: string;
 }) {
-  db.prepare(`
+  await db.prepare(`
     INSERT INTO agents (
       name, slug, resource_type, type, description, long_description,
       author_github, repository_url, homepage_url, license, hermes_version_required,
@@ -128,7 +128,7 @@ export function upsertAgent(data: {
       verification_checks=excluded.verification_checks,
       stars=excluded.stars, forks=excluded.forks, watchers=excluded.watchers,
       updated_at=excluded.updated_at, is_archived=0
-  await `).run(
+  `).run(
     data.name, data.slug, data.resource_type, data.type, data.description, data.long_description ?? null,
     data.author_github, data.repository_url, data.homepage_url ?? null,
     data.license ?? null, data.hermes_version_required ?? null,
@@ -143,29 +143,29 @@ export function upsertAgent(data: {
   );
 }
 
-export function getResourceStats() {
-  await return db.prepare("SELECT resource_type, COUNT(*) as count FROM agents WHERE is_archived = 0 GROUP BY resource_type ORDER BY count DESC").all() as any[];
+export async function getResourceStats() {
+  return await db.prepare("SELECT resource_type, COUNT(*) as count FROM agents WHERE is_archived = 0 GROUP BY resource_type ORDER BY count DESC").all() as any[];
 }
 
-export function getCategoryStats() {
-  return db.prepare(`
+export async function getCategoryStats() {
+  return await db.prepare(`
     SELECT c.name, c.slug, c.icon, c.type, COUNT(ac.agent_id) as count
     FROM categories c
     LEFT JOIN agent_categories ac ON ac.category_id = c.id
     WHERE c.type = 'usecase'
     GROUP BY c.id
     ORDER BY count DESC
-  await `).all() as any[];
+  `).all() as any[];
 }
 
-export function getComplexityStats() {
-  await return db.prepare("SELECT complexity_level, COUNT(*) as count FROM agents WHERE is_archived = 0 GROUP BY complexity_level ORDER BY count DESC").all() as any[];
+export async function getComplexityStats() {
+  return await db.prepare("SELECT complexity_level, COUNT(*) as count FROM agents WHERE is_archived = 0 GROUP BY complexity_level ORDER BY count DESC").all() as any[];
 }
 
-export function getDeploymentStats() {
-  await return db.prepare("SELECT deployment_type, COUNT(*) as count FROM agents WHERE is_archived = 0 GROUP BY deployment_type ORDER BY count DESC").all() as any[];
+export async function getDeploymentStats() {
+  return await db.prepare("SELECT deployment_type, COUNT(*) as count FROM agents WHERE is_archived = 0 GROUP BY deployment_type ORDER BY count DESC").all() as any[];
 }
 
-export function getMaintenanceStats() {
-  await return db.prepare("SELECT maintenance_status, COUNT(*) as count FROM agents WHERE is_archived = 0 GROUP BY maintenance_status ORDER BY count DESC").all() as any[];
+export async function getMaintenanceStats() {
+  return await db.prepare("SELECT maintenance_status, COUNT(*) as count FROM agents WHERE is_archived = 0 GROUP BY maintenance_status ORDER BY count DESC").all() as any[];
 }

@@ -64,7 +64,7 @@ app.use('/api/stats', publicLimiter, statsRoutes);
 app.use('/api/crawler', crawlerRoutes);
 
 // Seed default admin users
-seedDefaultUsers();
+seedDefaultUsers().catch(() => {});
 
 app.use('/api/submit', submissionLimiter, submissionRoutes);
 app.use('/api/console', adminLimiter, adminRoutes);

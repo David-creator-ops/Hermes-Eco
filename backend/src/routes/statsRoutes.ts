@@ -2,9 +2,11 @@ import { Router } from 'express';
 import * as statsService from '../services/statsService';
 
 const router = Router();
-await router.get('/', (req, res) => {
+
+router.get('/', async (req, res) => {
   try {
-    res.json({ data: statsService.getEcosystemStats() });
+    const stats = await statsService.getEcosystemStats();
+    res.json({ data: stats });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
