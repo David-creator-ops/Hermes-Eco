@@ -9,7 +9,7 @@
 const axios = require('axios');
 
 const GH_PAT = process.env.GH_PAT || '';
-const CRAWLER_API_URL = process.env.CRAWLER_API_URL || 'http://localhost:3001';
+const CRAWLER_API_URL = process.env.CRAWLER_API_URL || 'https://hermes-registry-backend-production.up.railway.app';
 
 const VERIFICATION_CHECKS = [
   { key: 'has_hermes_dependency', label: 'Has Hermes dependency' },
