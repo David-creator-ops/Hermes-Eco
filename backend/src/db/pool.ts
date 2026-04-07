@@ -21,7 +21,8 @@ if (DATABASE_URL && DATABASE_URL.startsWith('postgresql')) {
 
   db = {
     exec(sql: string) {
-      // Skip for PostgreSQL - tables are created manually
+      // PostgreSQL: skip exec() for table creation — tables are created via separate migration
+      console.log('PostgreSQL: skipping exec() for table creation (tables managed separately)');
       return Promise.resolve({});
     },
     prepare(sql: string) {
