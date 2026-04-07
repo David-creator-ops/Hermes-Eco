@@ -299,117 +299,115 @@ router.post('/crawler/run', requireAuth(), async (req: Request, res: Response) =
       "INSERT INTO crawler_runs (trigger, status) VALUES ($1, 'running') RETURNING id"
     ).get(user.username);
 
-    res.json({ data: { run_id: Number(runId.id), message: 'Crawler started' } });
-
     // Run async in background
     setTimeout(async () => {
       try {
         const axios = require('axios');
-        // Prefer env var, fall back to DB setting
-        let githubToken = process.env.GH_PAT || process.env.GITHUB_TOKEN || (await getCrawlerSetting('github_token')) || '';
+        // STRICT: must use env var GH_PAT for code search (requires token >= 300 stars)
+        const githubToken = process.env.GH_PAT || process.env.GITHUB_TOKEN || '';
         const maxResources = parseInt((await getCrawlerSetting('max_resources_per_run')) || '30', 10);
-        const headers: Record<string, string> = { Accept: 'application/vnd.github.v3+json' };
-        if (githubToken) headers.Authorization = `token ${githubToken}`;
 
-        // Strategy: search for repos via GitHub repo search, then check for .hermes-eco.json
-        const allItems: any[] = [];
-        const searchQueries = [
-          'hermes-agent topic:ai',
-          'hermes agent topic:llm',
-          'hermes-eco',
-          'hermes registry',
-          'hermes-agent tools',
-          'hermes-agent skills',
-          'hermes ai agent',
-        ];
-
-        for (const q of searchQueries) {
-          try {
-            const resp = await axios.get(
-              `https://api.github.com/search/repositories?q=${encodeURIComponent(q)}&sort=stars&order=desc&per_page=20`,
-              { headers, timeout: 15000 }
-            );
-            for (const item of (resp.data.items || [])) {
-              allItems.push(item);
-            }
-          } catch (e: any) { /* skip */ }
+        if (!githubToken || githubToken.length < 30) {
+          await db.prepare(
+            "UPDATE crawler_runs SET status = 'failed', details = $1, finished_at = CURRENT_TIMESTAMP WHERE id = $2"
+          ).run(JSON.stringify({ error: 'GH_PAT env var required for code search. Add GH_PAT to Railway env vars.' }), Number(runId.id));
+          return;
         }
 
-        // Deduplicate
-        const seen = new Set<string>();
-        const uniqueRepos = allItems.filter((i: any) => {
-          const key = i.full_name;
-          if (seen.has(key) || !key) return false;
-          seen.add(key);
-          return true;
-        }).slice(0, maxResources);
+        const headers: Record<string, string> = {
+          Accept: 'application/vnd.github+json',
+          Authorization: `Bearer ${githubToken}`,
+          'X-GitHub-Api-Version': '2022-11-28',
+        };
+
+        // STRICT: ONLY find repos that have .hermes-eco.json file
+        // This is the ONLY way to know a repo belongs to Hermes Eco
+        let allItems: any[] = [];
+        try {
+          const resp = await axios.get(
+            `https://api.github.com/search/code?q=filename:.hermes-eco.json&per_page=30`,
+            { headers, timeout: 15000 }
+          );
+          allItems = resp.data.items || [];
+        } catch (e: any) {
+          await db.prepare(
+            "UPDATE crawler_runs SET status = 'failed', details = $1, finished_at = CURRENT_TIMESTAMP WHERE id = $2"
+          ).run(JSON.stringify({ error: `GitHub code search failed: ${e.response?.status} ${e.response?.data?.message || e.message}` }), Number(runId.id));
+          return;
+        }
+
+        // Deduplicate repos
+        const seen = new Map<string, any>();
+        for (const item of allItems) {
+          const repo = item.repository;
+          if (repo && !seen.has(repo.full_name)) {
+            seen.set(repo.full_name, repo);
+          }
+        }
+        const uniqueRepos = [...seen.values()].slice(0, maxResources);
 
         let processed = 0;
         let failed = 0;
 
-        for (const repo of (uniqueRepos as any[])) {
+        for (const repo of uniqueRepos) {
           try {
-            if (repo.fork && repo.stargazers_count < 10) continue;
+            const existing = await db.prepare('SELECT id FROM agents WHERE repository_url = $1').get(repo.html_url) as any;
+            if (existing) continue; // already have this
 
-            const existing = await db.prepare('SELECT id FROM agents WHERE repository_url = ?').get(repo.html_url) as any;
-            if (existing) { processed++; continue; }
+            // Fetch the .hermes-eco.json content
+            const fileResp = await axios.get(
+              `https://api.github.com/repos/${repo.owner.login}/${repo.name}/contents/.hermes-eco.json`,
+              { headers, timeout: 10000 }
+            );
 
-            try {
-              let fileResp;
-              // Try default branch first
-              try {
-                fileResp = await axios.get(
-                  `https://api.github.com/repos/${repo.owner.login}/${repo.name}/contents/.hermes-eco.json`,
-                  { headers, timeout: 10000 }
-                );
-              } catch {
-                // Try main branch explicitly
-                fileResp = await axios.get(
-                  `https://api.github.com/repos/${repo.owner.login}/${repo.name}/contents/.hermes-eco.json?ref=main`,
-                  { headers, timeout: 10000 }
-                );
-              }
+            const content = Buffer.from(fileResp.data.content, 'base64').toString('utf-8');
+            const json = JSON.parse(content);
 
-              const content = Buffer.from(fileResp.data.content, 'base64').toString('utf-8');
-              const json = JSON.parse(content);
-              const slug = (json.name || repo.name)
-                .toLowerCase().replace(/[^a-z0-9\s-]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-').trim();
+            // STRICT VALIDATION: must be a valid Hermes resource
+            const validTypes = ['agent', 'skill', 'tool', 'workflow', 'integration', 'memory', 'router', 'config'];
+            if (!json.type || !validTypes.includes(json.type)) continue;
+            if (!json.description) continue;
+            if (!json.name && !repo.name) continue;
 
-              await db.prepare(`
-                INSERT INTO agents (
-                  name, slug, resource_type, type, description, author_github,
-                  repository_url, homepage_url, license, hermes_version_required,
-                  tier1_category, tier2_categories, complexity_level, deployment_type,
-                  required_skills, tags, tools_used, verification_score,
-                  verification_status, verification_checks, stars, forks, watchers, is_featured, created_at, updated_at
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, '[]', '[]', 0.5, 'verified', '{}', $16, $17, $18, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-              `).run(
-                json.name || repo.name, slug,
-                json.type || 'agent', json.type || 'agent',
-                json.description || repo.description || '', json.author || repo.owner.login,
-                repo.html_url, json.homepage || null, json.license || repo.license?.spdx_id || null,
-                json.hermes_version || null, json.category || null,
-                JSON.stringify(json.secondary_categories || []),
-                json.complexity || null, json.deployment || null,
-                JSON.stringify(json.skills_required || []),
-                repo.stargazers_count || 0, repo.forks_count || 0, repo.watchers_count || 0
-              );
-              processed++;
-            } catch {
-              // No .hermes-eco.json — skip silently
-              failed++;
-            }
-          } catch {
+            // Fetch repo metadata for stars etc
+            const repoResp = await axios.get(repo.url, { headers, timeout: 10000 });
+            const repoData = repoResp.data;
+
+            const slug = (json.name || repo.name)
+              .toLowerCase().replace(/[^a-z0-9\s-]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-').trim();
+
+            await db.prepare(`
+              INSERT INTO agents (
+                name, slug, resource_type, type, description, author_github,
+                repository_url, homepage_url, license, hermes_version_required,
+                tier1_category, tier2_categories, complexity_level, deployment_type,
+                required_skills, tags, tools_used, verification_score,
+                verification_status, verification_checks, stars, forks, watchers, is_featured, created_at, updated_at
+              ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, '[]', '[]', 0.5, 'verified', '{}', $16, $17, $18, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            `).run(
+              json.name || repo.name, slug,
+              json.type, json.type,
+              json.description || repo.description || '', json.author || repoData.owner?.login || repo.owner.login,
+              repo.html_url, json.homepage || null, json.license || repoData.license?.spdx_id || null,
+              json.hermes_version || null, json.category || null,
+              JSON.stringify(json.secondary_categories || []),
+              json.complexity || null, json.deployment || null,
+              JSON.stringify(json.skills_required || []),
+              repoData.stargazers_count || 0, repoData.forks_count || 0, repoData.watchers_count || 0
+            );
+            processed++;
+          } catch (err: any) {
+            console.log(`  Skip ${repo?.full_name || 'unknown'}: ${err.message?.slice(0, 100)}`);
             failed++;
           }
         }
 
         await db.prepare(
-          "UPDATE crawler_runs SET status = 'completed', resources_found = ?, resources_processed = ?, resources_failed = ?, finished_at = CURRENT_TIMESTAMP WHERE id = ?"
+          "UPDATE crawler_runs SET status = 'completed', resources_found = $1, resources_processed = $2, resources_failed = $3, finished_at = CURRENT_TIMESTAMP WHERE id = $4"
         ).run(uniqueRepos.length, processed, failed, Number(runId.id));
       } catch (err: any) {
         await db.prepare(
-          "UPDATE crawler_runs SET status = 'failed', details = ?, finished_at = CURRENT_TIMESTAMP WHERE id = ?"
+          "UPDATE crawler_runs SET status = 'failed', details = $1, finished_at = CURRENT_TIMESTAMP WHERE id = $2"
         ).run(JSON.stringify({ error: err.message }), Number(runId.id));
         console.error('Crawler run failed:', err.message);
       }
