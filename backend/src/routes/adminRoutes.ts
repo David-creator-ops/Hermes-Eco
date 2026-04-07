@@ -234,14 +234,41 @@ router.post('/resources/:id/archive', requireAuth(), async (req: Request, res: R
 router.get('/crawler/settings', requireAuth(), async (req: Request, res: Response) => {
   try {
     const keys = ['github_token', 'api_base_url', 'auto_verify_threshold', 'max_resources_per_run', 'crawl_schedule'];
+    const defaults: Record<string, string> = {
+      github_token: process.env.GH_PAT || process.env.GITHUB_TOKEN || '',
+      api_base_url: process.env.CRAWLER_API_URL || '',
+      auto_verify_threshold: '',
+      max_resources_per_run: '',
+      crawl_schedule: '',
+    };
     const settings: Record<string, string> = {};
     for (const key of keys) {
-      settings[key] = (await getCrawlerSetting(key)) || '';
+      const dbVal = await getCrawlerSetting(key);
+      settings[key] = dbVal || defaults[key] || '';
     }
+    // If we loaded env var defaults but haven't saved them to DB yet, seed them now
+    if (!settings.github_token && process.env.GH_PAT) {
+      settings.github_token = process.env.GH_PAT;
+    }
+    if (!settings.api_base_url && process.env.CRAWLER_API_URL) {
+      settings.api_base_url = process.env.CRAWLER_API_URL;
+    }
+    // Save non-secret defaults to DB so they persist
+    if (settings.api_base_url && !(await getCrawlerSetting('api_base_url'))) {
+      await db.prepare(
+        "INSERT INTO crawler_settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP) ON CONFLICT(key) DO NOTHING"
+      ).run('api_base_url', settings.api_base_url);
+    }
+    // Return raw token for form handling (UI masks it)
+    // Send raw env var separately for form default (cjs crawler run uses env directly, not this response)
+    const hasEnvToken = !!(process.env.GH_PAT || process.env.GITHUB_TOKEN);
+    const hasEnvApiUrl = !!process.env.CRAWLER_API_URL;
+    // Raw env values for form defaults (masked in UI via the frontend)
+    const envToken = process.env.GH_PAT || process.env.GITHUB_TOKEN || '';
     const recentRuns = await db.prepare(
       "SELECT * FROM crawler_runs ORDER BY started_at DESC LIMIT 10"
     ).all() as any[];
-    res.json({ data: { settings, recent_runs: recentRuns } });
+    res.json({ data: { settings, recent_runs: recentRuns, has_env_token: hasEnvToken, has_env_api_url: hasEnvApiUrl } });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -269,7 +296,7 @@ router.post('/crawler/run', requireAuth(), async (req: Request, res: Response) =
   try {
     const user = (req as any).user;
     const runId = await db.prepare(
-      "INSERT INTO crawler_runs (trigger, status) VALUES (?, 'running')"
+      "INSERT INTO crawler_runs (trigger, status) VALUES ($1, 'running')"
     ).run(user.username);
 
     res.json({ data: { run_id: Number(runId.lastInsertRowid), message: 'Crawler started' } });
@@ -278,34 +305,95 @@ router.post('/crawler/run', requireAuth(), async (req: Request, res: Response) =
     setTimeout(async () => {
       try {
         const axios = require('axios');
-        const githubToken = (await getCrawlerSetting('github_token')) || '';
+        // First try DB setting, fall back to env var
+        let githubToken = (await getCrawlerSetting('github_token')) || '';
         const maxResources = parseInt((await getCrawlerSetting('max_resources_per_run')) || '30', 10);
+        // If token was masked in the DB (has dots), use env var instead
+        if (githubToken.includes('•')) {
+          githubToken = process.env.GH_PAT || process.env.GITHUB_TOKEN || '';
+        }
         const headers: Record<string, string> = { Accept: 'application/vnd.github.v3+json' };
         if (githubToken) headers.Authorization = `token ${githubToken}`;
 
-        const resp = await axios.get(
-          'https://api.github.com/search/code?q=filename:.hermes-eco.json&per_page=30',
-          { headers, timeout: 15000 }
-        );
+        // Strategy: search for repos by topic, keyword, or known orgs that might use Hermes
+        // Also directly scan known repos from our registry
+        const allItems = [];
 
-        const items = resp.data.items || [];
-        const uniqueRepos = [...new Map(items.map((i: any) => [i.repository.full_name, i])).values()];
+        // 1. Search repos with hermes-related topics/keywords
+        const searchQueries = [
+          'topic:hermes-eco',
+          'topic:hermes+topic:ai',
+          'hermes+agent+registry',
+          'hermes+ai+agent',
+        ];
+
+        for (const query of searchQueries) {
+          try {
+            const resp = await axios.get(
+              `https://api.github.com/search/repos?q=${query}&sort=stars&order=desc&per_page=30`,
+              { headers, timeout: 15000 }
+            );
+            for (const item of (resp.data.items || [])) {
+              allItems.push(item);
+            }
+          } catch { /* skip failed queries */ }
+        }
+
+        // 2. Also scan repos from the known .hermes-eco.json repos (direct fetch)
+        try {
+          const codeResp = await axios.get(
+            'https://api.github.com/search/code?q=filename:.hermes-eco.json&per_page=30',
+            { headers, timeout: 15000 }
+          );
+          for (const item of (codeResp.data.items || [])) {
+            // Convert code search result to repo-like object
+            allItems.push(item.repository);
+          }
+        } catch { /* code search needs auth most of the time */ }
+
+        // Deduplicate by full_name
+        const seen = new Set();
+        const uniqueRepos = [];
+        for (const item of allItems) {
+          const fullName = item.full_name;
+          if (!seen.has(fullName) && fullName) {
+            seen.add(fullName);
+            uniqueRepos.push(item);
+          }
+        }
+
         let processed = 0;
         let failed = 0;
 
-        for (const item of (uniqueRepos as any[]).slice(0, maxResources)) {
+        for (const repo of (uniqueRepos as any[]).slice(0, maxResources)) {
           try {
-            const metaResp = await axios.get(`https://api.github.com/repos/${item.repository.owner.login}/${item.repository.name}`, { headers, timeout: 10000 });
-            const repo = metaResp.data;
+            // Skip forks with 0 stars to avoid noise
+            if (repo.fork && repo.stargazers_count < 5) continue;
+
+            if (!repo.owner) {
+              // Fetch full repo details
+              const metaResp = await axios.get(`https://api.github.com/repos/${repo.full_name}`, { headers, timeout: 10000 });
+              Object.assign(repo, metaResp.data);
+            }
 
             const existing = await db.prepare('SELECT id FROM agents WHERE repository_url = ?').get(repo.html_url) as any;
             if (existing) { processed++; continue; }
 
             try {
-              const fileResp = await axios.get(
-                `https://api.github.com/repos/${repo.owner.login}/${repo.name}/contents/.hermes-eco.json`,
-                { headers, timeout: 10000 }
-              );
+              // Try both master and main branches
+              let fileResp;
+              try {
+                fileResp = await axios.get(
+                  `https://api.github.com/repos/${repo.owner.login}/${repo.name}/contents/.hermes-eco.json?${Date.now()}`,
+                  { headers, timeout: 10000 }
+                );
+              } catch {
+                // Try main branch
+                fileResp = await axios.get(
+                  `https://api.github.com/repos/${repo.owner.login}/${repo.name}/contents/.hermes-eco.json?ref=main&${Date.now()}`,
+                  { headers, timeout: 10000 }
+                );
+              }
               const content = Buffer.from(fileResp.data.content, 'base64').toString('utf-8');
               const json = JSON.parse(content);
 
@@ -402,6 +490,30 @@ router.get('/audit-logs', requireAuth(), async (req: Request, res: Response) => 
       "SELECT al.*, au.username FROM audit_logs al LEFT JOIN admin_users au ON au.id = al.admin_id ORDER BY al.created_at DESC LIMIT ? OFFSET ?"
     ).all(limit, (page - 1) * limit) as any[];
     res.json({ data: logs });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Change Password ──
+router.post('/auth/change-password', requireAuth(), async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    const { current_password, new_password } = req.body;
+    if (!current_password || !new_password) return res.status(400).json({ error: 'Current and new password required' });
+    if (new_password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
+
+    const bcrypt = require('bcryptjs');
+    const existing = await db.prepare('SELECT password_hash FROM admin_users WHERE id = ?').get(user.id) as any;
+    if (!existing) return res.status(404).json({ error: 'User not found' });
+
+    const valid = await bcrypt.compare(current_password, existing.password_hash);
+    if (!valid) return res.status(401).json({ error: 'Current password is incorrect' });
+
+    const hash = await bcrypt.hash(new_password, 12);
+    await db.prepare('UPDATE admin_users SET password_hash = ? WHERE id = ?').run(hash, user.id);
+    auditLog(user.id, 'change_password', 'auth', user.id, {}, req.ip || '');
+    res.json({ data: { message: 'Password changed successfully' } });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

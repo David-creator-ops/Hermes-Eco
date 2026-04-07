@@ -1,0 +1,15 @@
+{
+  "name": "Hermes Agent Registry",
+  "type": "tools",
+  "description": "A centralized discovery platform for AI agents, skills, tools, workflows, and integrations built with Hermes. Browse, verify, and submit your own projects to the registry.",
+  "author": "David",
+  "author_github": "David-creator-ops",
+  "homepage": "https://hermes-eco-frontend.vercel.app",
+  "category": "tools",
+  "secondary_categories": ["devops", "search", "registry"],
+  "skills_required": ["hermes-agent", "react", "node", "postgresql"],
+  "complexity": "intermediate",
+  "deployment": "vercel-railway",
+  "version": "1.0.0",
+  "license": "MIT"
+}
