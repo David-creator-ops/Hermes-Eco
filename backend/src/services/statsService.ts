@@ -10,7 +10,7 @@ export async function getEcosystemStats() {
 
   const newMonth = await db.prepare(
     IS_POSTGRES
-      ? "SELECT COUNT(*) as count FROM agents WHERE created_at > CURRENT_TIMESTAMP - INTERVAL '30 days' AND is_archived = 0"
+      ? "SELECT COUNT(*) as count FROM agents WHERE created_at::timestamp > CURRENT_TIMESTAMP - INTERVAL '30 days' AND is_archived = 0"
       : "SELECT COUNT(*) as count FROM agents WHERE created_at > datetime('now', '-30 days') AND is_archived = 0"
   ).get() as any;
 
@@ -26,24 +26,29 @@ export async function getEcosystemStats() {
     "SELECT deployment_type, COUNT(*) as count FROM agents WHERE is_archived = 0 GROUP BY deployment_type"
   ).all() as any[];
 
-  // Tools used - use simple approach that works on both SQLite and Postgres
+  // Tools used
   let tools: any[] = [];
-  try {
-    tools = await db.prepare(`
-      SELECT json_each.value as tool, COUNT(*) as count
-      FROM agents, json_each(tools_used)
-      WHERE agents.is_archived = 0
-      GROUP BY tool ORDER BY count DESC LIMIT 10
-    `).all() as any[];
-  } catch {
-    // If json_each fails, try Postgres jsonb_array_elements_text
-    if (IS_POSTGRES) {
+  if (IS_POSTGRES) {
+    try {
       tools = await db.prepare(`
         SELECT elem as tool, COUNT(*) as count
         FROM agents, jsonb_array_elements_text(tools_used::jsonb) as elem
-        WHERE agents.is_archived = 0 AND tools_used IS NOT NULL
+        WHERE agents.is_archived = 0 AND tools_used IS NOT NULL AND tools_used::text != 'null'
         GROUP BY elem ORDER BY count DESC LIMIT 10
       `).all() as any[];
+    } catch {
+      tools = [];
+    }
+  } else {
+    try {
+      tools = await db.prepare(`
+        SELECT json_each.value as tool, COUNT(*) as count
+        FROM agents, json_each(tools_used)
+        WHERE agents.is_archived = 0 AND tools_used IS NOT NULL AND tools_used != 'null'
+        GROUP BY tool ORDER BY count DESC LIMIT 10
+      `).all() as any[];
+    } catch {
+      tools = [];
     }
   }
 
