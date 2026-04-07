@@ -1,16 +1,7 @@
 node_modules/
+dist/
 .env
 .env.local
-.env.production
-dist/
 *.log
 .DS_Store
 coverage/
-backend/*.db
-backend/*.db-journal
-backend/*.db-wal
-backend/*.db-shm
-backend/node_modules/
-frontend/node_modules/
-*.tsbuildinfo
-tmp/

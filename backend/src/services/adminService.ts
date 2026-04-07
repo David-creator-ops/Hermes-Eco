@@ -90,7 +90,7 @@ export async function createSession(userId: number, tokenHash: string) {
 
 export async function verifySession(tokenHash: string) {
   const sql = IS_POSTGRES
-    ? "SELECT u.id, u.username, u.email, u.role, u.is_active, u.last_login FROM admin_sessions s JOIN admin_users u ON u.id = s.user_id WHERE s.token_hash = ? AND s.expires_at > CURRENT_TIMESTAMP"
+    ? "SELECT u.id, u.username, u.email, u.role, u.is_active, u.last_login FROM admin_sessions s JOIN admin_users u ON u.id = s.user_id WHERE s.token_hash = $1 AND s.expires_at::timestamptz > CURRENT_TIMESTAMP"
     : "SELECT u.id, u.username, u.email, u.role, u.is_active, u.last_login FROM admin_sessions s JOIN admin_users u ON u.id = s.user_id WHERE s.token_hash = ? AND s.expires_at > datetime('now')";
 
   return db.prepare(sql).get(tokenHash) as any;
@@ -211,7 +211,7 @@ export async function authenticateUser(username: string, password: string) {
 
 export async function verifyToken(tokenHash: string) {
   const sql = IS_POSTGRES
-    ? "SELECT u.id, u.username, u.email, u.role, u.is_active, u.last_login FROM admin_sessions s JOIN admin_users u ON u.id = s.user_id WHERE s.token_hash = ? AND s.expires_at > CURRENT_TIMESTAMP"
+    ? "SELECT u.id, u.username, u.email, u.role, u.is_active, u.last_login FROM admin_sessions s JOIN admin_users u ON u.id = s.user_id WHERE s.token_hash = ? AND s.expires_at::timestamptz > CURRENT_TIMESTAMP"
     : "SELECT u.id, u.username, u.email, u.role, u.is_active, u.last_login FROM admin_sessions s JOIN admin_users u ON u.id = s.user_id WHERE s.token_hash = ? AND s.expires_at > datetime('now')";
 
   return (await db.prepare(sql).get(tokenHash)) as any;

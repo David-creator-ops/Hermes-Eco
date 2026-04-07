@@ -63,7 +63,7 @@ router.get('/dashboard', requireAuth(), async (req: Request, res: Response) => {
     const dailyGrowth = await db.prepare(`
       SELECT DATE(created_at) as day, COUNT(*) as count
       FROM agents
-      WHERE is_archived = 0 AND created_at >= date('now', '-7 days')
+      WHERE is_archived = 0 AND created_at::timestamptz >= CURRENT_TIMESTAMP - INTERVAL '7 days'
       GROUP BY DATE(created_at)
       ORDER BY day
     `).all() as any[];
