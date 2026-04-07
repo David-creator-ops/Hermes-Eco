@@ -429,11 +429,12 @@ router.post('/crawler/run', requireAuth(), async (req: Request, res: Response) =
 
         await db.prepare(
           "UPDATE crawler_runs SET status = 'completed', resources_found = ?, resources_processed = ?, resources_failed = ?, finished_at = CURRENT_TIMESTAMP WHERE id = ?"
-        ).run(uniqueRepos.length, processed, failed, Number(runId.lastInsertRowid));
+        ).run(uniqueRepos.length, processed, failed, Number(runId.id));
       } catch (err: any) {
         await db.prepare(
-          "UPDATE crawler_runs SET status = 'failed', resources_failed = 1, finished_at = CURRENT_TIMESTAMP WHERE id = ?"
-        ).run(Number(runId.lastInsertRowid));
+          "UPDATE crawler_runs SET status = 'failed', details = ?, finished_at = CURRENT_TIMESTAMP WHERE id = ?"
+        ).run(JSON.stringify({ error: err.message }), Number(runId.id));
+        console.error('Crawler run failed:', err.message);
       }
     }, 100);
   } catch (err: any) {
