@@ -3,7 +3,7 @@ import * as agentService from '../services/agentService';
 
 const router = Router();
 
-router.get('/', (req, res) => {
+await router.get('/', (req, res) => {
   try {
     const result = agentService.listAgents({
       page: parseInt(req.query.page as string || '1'),
@@ -28,7 +28,7 @@ router.get('/', (req, res) => {
   }
 });
 
-router.get('/resource-type/:type', (req, res) => {
+await router.get('/resource-type/:type', (req, res) => {
   try {
     const agents = agentService.getAgentsByResourceType(req.params.type);
     res.json({ data: agents });
@@ -37,7 +37,7 @@ router.get('/resource-type/:type', (req, res) => {
   }
 });
 
-router.get('/featured', (req, res) => {
+await router.get('/featured', (req, res) => {
   try {
     const agents = agentService.getFeaturedAgents(4);
     res.json({ data: agents });
@@ -46,7 +46,7 @@ router.get('/featured', (req, res) => {
   }
 });
 
-router.get('/recent', (req, res) => {
+await router.get('/recent', (req, res) => {
   try {
     const agents = agentService.getRecentAgents(10);
     res.json({ data: agents });
@@ -55,7 +55,7 @@ router.get('/recent', (req, res) => {
   }
 });
 
-router.get('/id/:id', (req, res) => {
+await router.get('/id/:id', (req, res) => {
   try {
     const agent = agentService.getAgentById(parseInt(req.params.id));
     if (!agent) return res.status(404).json({ error: 'Resource not found' });
@@ -65,7 +65,7 @@ router.get('/id/:id', (req, res) => {
   }
 });
 
-router.get('/slug/:slug', (req, res) => {
+await router.get('/slug/:slug', (req, res) => {
   try {
     const agent = agentService.getAgentBySlug(req.params.slug);
     if (!agent) return res.status(404).json({ error: 'Resource not found' });

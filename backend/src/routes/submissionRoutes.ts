@@ -61,7 +61,7 @@ router.post('/', (req, res) => {
       .trim();
 
     // Check if already exists
-    const existing = db.prepare('SELECT id FROM agents WHERE repository_url = ?').get(repository) as any;
+    await const existing = db.prepare('SELECT id FROM agents WHERE repository_url = ?').get(repository) as any;
     if (existing) return res.status(409).json({ error: 'Resource already exists in the registry', existing_id: existing.id });
 
     // Insert into submissions
@@ -71,7 +71,7 @@ router.post('/', (req, res) => {
         author_github, repository_url, license, complexity, deployment, tags,
         status
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
-    `).run(
+    await `).run(
       'web_form',
       name,
       type,
@@ -98,11 +98,11 @@ router.post('/', (req, res) => {
 });
 
 // GET /api/submit/stats
-router.get('/stats', (req, res) => {
+await router.get('/stats', (req, res) => {
   try {
-    const total = db.prepare('SELECT COUNT(*) as total FROM submissions').get() as any;
-    const bySource = db.prepare('SELECT source, COUNT(*) as c FROM submissions GROUP BY source ORDER BY c DESC').all() as any[];
-    const byStatus = db.prepare('SELECT status, COUNT(*) as c FROM submissions GROUP BY status').all() as any[];
+    await const total = db.prepare('SELECT COUNT(*) as total FROM submissions').get() as any;
+    await const bySource = db.prepare('SELECT source, COUNT(*) as c FROM submissions GROUP BY source ORDER BY c DESC').all() as any[];
+    await const byStatus = db.prepare('SELECT status, COUNT(*) as c FROM submissions GROUP BY status').all() as any[];
     res.json({ data: { total: total.total, by_source: bySource, by_status: byStatus } });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -110,9 +110,9 @@ router.get('/stats', (req, res) => {
 });
 
 // GET /api/submit/all (for admin use)
-router.get('/all', (req, res) => {
+await router.get('/all', (req, res) => {
   try {
-    const submissions = db.prepare('SELECT * FROM submissions ORDER BY submitted_at DESC LIMIT 100').all() as any[];
+    await const submissions = db.prepare('SELECT * FROM submissions ORDER BY submitted_at DESC LIMIT 100').all() as any[];
     res.json({ data: submissions });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -138,7 +138,7 @@ router.post('/batch', (req, res) => {
       const repoUrl = item.repository_url ? sanitizeGithubUrl(item.repository_url) : (item.repository ? sanitizeGithubUrl(item.repository) : null);
       const desc = sanitizeDescription(item.description || '');
 
-      ins.run(
+      await ins.run(
         item.source || 'github_crawler',
         name,
         item.type || 'agent',
@@ -183,12 +183,12 @@ router.post('/featured', (req, res) => {
     }
 
     // Check if this GitHub URL already exists in agents
-    const existing = db.prepare('SELECT id FROM agents WHERE repository_url = ?').get(cleanUrl) as any;
+    await const existing = db.prepare('SELECT id FROM agents WHERE repository_url = ?').get(cleanUrl) as any;
 
     db.prepare(
       `INSERT INTO featured_requests (resource_name, github_url, email, message, resource_id, status)
        VALUES (?, ?, ?, ?, ?, 'pending')`
-    ).run(cleanName, cleanUrl, cleanEmail, cleanMessage || null, existing?.id || null);
+    await ).run(cleanName, cleanUrl, cleanEmail, cleanMessage || null, existing?.id || null);
 
     res.json({ data: { message: 'Featured request received! We will review it and contact you.' } });
   } catch (err: any) {
@@ -197,10 +197,10 @@ router.post('/featured', (req, res) => {
 });
 
 // GET /api/submit/featured (public: get wallet + pricing)
-router.get('/featured', (req, res) => {
+await router.get('/featured', (req, res) => {
   try {
-    const wallet = db.prepare("SELECT value FROM crawler_settings WHERE key = 'solana_usdc_wallet'").get() as any;
-    const price = db.prepare("SELECT value FROM crawler_settings WHERE key = 'featured_price_usdc'").get() as any;
+    await const wallet = db.prepare("SELECT value FROM crawler_settings WHERE key = 'solana_usdc_wallet'").get() as any;
+    await const price = db.prepare("SELECT value FROM crawler_settings WHERE key = 'featured_price_usdc'").get() as any;
     res.json({
       data: {
         wallet: wallet?.value || '',

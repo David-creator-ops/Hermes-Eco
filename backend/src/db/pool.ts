@@ -1,10 +1,11 @@
 import path from 'path';
 
 const DATABASE_URL = process.env.DATABASE_URL || '';
+const IS_POSTGRES = DATABASE_URL.startsWith('postgresql');
 
 let db: any;
 
-if (DATABASE_URL && DATABASE_URL.startsWith('postgresql')) {
+if (IS_POSTGRES) {
   // PostgreSQL mode (Railway production)
   const { Pool } = require('pg');
 
@@ -21,25 +22,25 @@ if (DATABASE_URL && DATABASE_URL.startsWith('postgresql')) {
 
   db = {
     exec(sql: string) {
-      // PostgreSQL: skip exec() for table creation — tables are created via separate migration
       console.log('PostgreSQL: skipping exec() for table creation (tables managed separately)');
       return Promise.resolve({});
     },
     prepare(sql: string) {
       return {
-        run(...args: any[]) {
+        async run(...args: any[]) {
           const { sql: pgSql, args: pgArgs } = convertToPg(sql, args);
-          return pool.query(pgSql, pgArgs).then((r: any) => ({
-            lastInsertRowid: r.rows[0]?.id || r.rows[0]?.lastval,
-          }));
+          const r = await pool.query(pgSql, pgArgs);
+          return { lastInsertRowid: r.rows[0]?.id };
         },
-        get(...args: any[]) {
+        async get(...args: any[]) {
           const { sql: pgSql, args: pgArgs } = convertToPg(sql, args);
-          return pool.query(pgSql, pgArgs).then((r: any) => r.rows[0]);
+          const r = await pool.query(pgSql, pgArgs);
+          return r.rows[0];
         },
-        all(...args: any[]) {
+        async all(...args: any[]) {
           const { sql: pgSql, args: pgArgs } = convertToPg(sql, args);
-          return pool.query(pgSql, pgArgs).then((r: any) => r.rows);
+          const r = await pool.query(pgSql, pgArgs);
+          return r.rows;
         },
       };
     },

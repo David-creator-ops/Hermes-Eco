@@ -31,12 +31,12 @@ router.post('/auth/login', async (req: Request, res: Response) => {
   }
 });
 
-router.get('/auth/me', requireAuth(), (req: Request, res: Response) => {
+await router.get('/auth/me', requireAuth(), (req: Request, res: Response) => {
   res.json({ data: { user: (req as any).user } });
 });
 
 // ── Dashboard ──
-router.get('/dashboard', requireAuth(), (req: Request, res: Response) => {
+await router.get('/dashboard', requireAuth(), (req: Request, res: Response) => {
   try {
     const totals = db.prepare(`
       SELECT 
@@ -48,12 +48,12 @@ router.get('/dashboard', requireAuth(), (req: Request, res: Response) => {
         (SELECT COALESCE(AVG(stars), 0) FROM agents WHERE is_archived = 0) as avg_stars,
         (SELECT COUNT(*) FROM submissions WHERE status = 'approved') as approved_submissions,
         (SELECT COUNT(*) FROM admin_users WHERE is_active = 1) as active_users
-    `).get() as any;
+    await `).get() as any;
 
     // Analytics: submissions by source
     const bySource = db.prepare(
       "SELECT source, COUNT(*) as count FROM submissions GROUP BY source ORDER BY count DESC"
-    ).all() as any[];
+    await ).all() as any[];
 
     // Analytics: growth — resources added per day (last 7 days)
     const dailyGrowth = db.prepare(`
@@ -62,12 +62,12 @@ router.get('/dashboard', requireAuth(), (req: Request, res: Response) => {
       WHERE is_archived = 0 AND created_at >= date('now', '-7 days')
       GROUP BY DATE(created_at)
       ORDER BY day
-    `).all() as any[];
+    await `).all() as any[];
 
     // Analytics: top resources by stars
     const topResources = db.prepare(
       "SELECT id, name, slug, resource_type, stars, verification_status, is_featured FROM agents WHERE is_archived = 0 ORDER BY stars DESC LIMIT 5"
-    ).all() as any[];
+    await ).all() as any[];
 
     // Analytics: verification distribution
     const verificationDist = db.prepare(`
@@ -76,7 +76,7 @@ router.get('/dashboard', requireAuth(), (req: Request, res: Response) => {
         SUM(CASE WHEN verification_status = 'unverified' THEN 1 ELSE 0 END) as unverified,
         SUM(CASE WHEN verification_status = 'invalid' THEN 1 ELSE 0 END) as invalid
       FROM agents WHERE is_archived = 0
-    `).get() as any;
+    await `).get() as any;
 
     // Analytics: recent activity (combine submissions + crawler + user actions)
     const recentActivity = db.prepare(`
@@ -87,19 +87,19 @@ router.get('/dashboard', requireAuth(), (req: Request, res: Response) => {
       SELECT 'user_action' as type, action as name, al.action as status, al.created_at as ts
       FROM audit_logs al
       ORDER BY ts DESC LIMIT 15
-    `).all() as any[];
+    await `).all() as any[];
 
     const recent = db.prepare(
       "SELECT id, resource_name, resource_type, source, status, submitted_at FROM submissions ORDER BY submitted_at DESC LIMIT 10"
-    ).all() as any[];
+    await ).all() as any[];
 
     const crawlerRuns = db.prepare(
       "SELECT id, status, resources_found, resources_processed, started_at FROM crawler_runs ORDER BY started_at DESC LIMIT 5"
-    ).all() as any[];
+    await ).all() as any[];
 
     const byType = db.prepare(
       "SELECT resource_type, COUNT(*) as count FROM agents WHERE is_archived = 0 GROUP BY resource_type ORDER BY count DESC"
-    ).all() as any[];
+    await ).all() as any[];
 
     res.json({ data: { totals, recent, crawler_runs: crawlerRuns, by_type: byType, by_source: bySource, daily_growth: dailyGrowth, top_resources: topResources, verification_dist: verificationDist, recent_activity: recentActivity } });
   } catch (err: any) {
@@ -108,7 +108,7 @@ router.get('/dashboard', requireAuth(), (req: Request, res: Response) => {
 });
 
 // ── Submissions ──
-router.get('/submissions', requireAuth(), (req: Request, res: Response) => {
+await router.get('/submissions', requireAuth(), (req: Request, res: Response) => {
   try {
     const status = (req.query.status as string) || 'pending';
     const page = parseInt(req.query.page as string || '1');
@@ -119,11 +119,11 @@ router.get('/submissions', requireAuth(), (req: Request, res: Response) => {
     const params: any[] = status !== 'all' ? [status] : [];
     const count = db.prepare(
       `SELECT COUNT(*) as total FROM submissions ${where}`
-    ).get(...params) as { total: number };
+    await ).get(...params) as { total: number };
 
     const submissions = db.prepare(
       `SELECT * FROM submissions ${where} ORDER BY submitted_at DESC LIMIT ? OFFSET ?`
-    ).all(...params, limit, offset) as any[];
+    await ).all(...params, limit, offset) as any[];
 
     res.json({ data: submissions, total: count.total, page, limit });
   } catch (err: any) {
@@ -134,7 +134,7 @@ router.get('/submissions', requireAuth(), (req: Request, res: Response) => {
 router.post('/submissions/:id/approve', requireAuth(), (req: Request, res: Response) => {
   try {
     const user = (req as any).user;
-    const submission = db.prepare('SELECT * FROM submissions WHERE id = ?').get(req.params.id) as any;
+    await const submission = db.prepare('SELECT * FROM submissions WHERE id = ?').get(req.params.id) as any;
     if (!submission) return res.status(404).json({ error: 'Submission not found' });
 
     const slug = (submission.resource_name || '')
@@ -148,7 +148,7 @@ router.post('/submissions/:id/approve', requireAuth(), (req: Request, res: Respo
         verification_score, verification_checks, stars, is_featured,
         created_at, updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', '[]', 'verified', 0.5, '{}', 0, 0, datetime('now'), datetime('now'))
-    `).run(
+    await `).run(
       submission.resource_name, slug, submission.resource_type, submission.resource_type,
       submission.description, submission.author_github || '', submission.repository_url || '',
       submission.license || 'MIT', submission.tags || '[]',
@@ -156,7 +156,7 @@ router.post('/submissions/:id/approve', requireAuth(), (req: Request, res: Respo
     );
 
     db.prepare("UPDATE submissions SET status = 'approved', verified_at = datetime('now') WHERE id = ?")
-      .run(req.params.id);
+      await .run(req.params.id);
 
     auditLog(user.id, 'approve_submission', 'submission', Number(req.params.id), { name: submission.resource_name }, req.ip || '');
     res.json({ data: { message: 'Submission approved' } });
@@ -170,7 +170,7 @@ router.post('/submissions/:id/reject', requireAuth(), (req: Request, res: Respon
     const user = (req as any).user;
     const reason = (req.body.reason as string) || '';
     db.prepare("UPDATE submissions SET status = 'rejected', verification_details = ? WHERE id = ?")
-      .run(JSON.stringify({ reason }), req.params.id);
+      await .run(JSON.stringify({ reason }), req.params.id);
     auditLog(user.id, 'reject_submission', 'submission', Number(req.params.id), { reason }, req.ip || '');
     res.json({ data: { message: 'Submission rejected' } });
   } catch (err: any) {
@@ -179,7 +179,7 @@ router.post('/submissions/:id/reject', requireAuth(), (req: Request, res: Respon
 });
 
 // ── Resources ──
-router.get('/resources', requireAuth(), (req: Request, res: Response) => {
+await router.get('/resources', requireAuth(), (req: Request, res: Response) => {
   try {
     const page = parseInt(req.query.page as string || '1');
     const limit = parseInt(req.query.limit as string || '30');
@@ -193,10 +193,10 @@ router.get('/resources', requireAuth(), (req: Request, res: Response) => {
       params = [`%${search}%`, `%${search}%`];
     }
 
-    const count = db.prepare(`SELECT COUNT(*) as total FROM agents ${where}`).get(...params) as { total: number };
+    await const count = db.prepare(`SELECT COUNT(*) as total FROM agents ${where}`).get(...params) as { total: number };
     const resources = db.prepare(
       `SELECT id, name, slug, resource_type, verification_status, verification_score, stars, author_github, created_at, is_featured, is_archived FROM agents ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`
-    ).all(...params, limit, offset) as any[];
+    await ).all(...params, limit, offset) as any[];
 
     res.json({ data: resources, total: count.total, page, limit });
   } catch (err: any) {
@@ -207,7 +207,7 @@ router.get('/resources', requireAuth(), (req: Request, res: Response) => {
 router.post('/resources/:id/toggle-featured', requireAuth(), (req: Request, res: Response) => {
   try {
     const user = (req as any).user;
-    db.prepare('UPDATE agents SET is_featured = 1 - is_featured WHERE id = ?').run(req.params.id);
+    await db.prepare('UPDATE agents SET is_featured = 1 - is_featured WHERE id = ?').run(req.params.id);
     auditLog(user.id, 'toggle_featured', 'agent', Number(req.params.id), {}, req.ip || '');
     res.json({ data: { message: 'Updated' } });
   } catch (err: any) {
@@ -218,7 +218,7 @@ router.post('/resources/:id/toggle-featured', requireAuth(), (req: Request, res:
 router.post('/resources/:id/archive', requireAuth(), (req: Request, res: Response) => {
   try {
     const user = (req as any).user;
-    db.prepare('UPDATE agents SET is_archived = 1 WHERE id = ?').run(req.params.id);
+    await db.prepare('UPDATE agents SET is_archived = 1 WHERE id = ?').run(req.params.id);
     auditLog(user.id, 'archive', 'agent', Number(req.params.id), {}, req.ip || '');
     res.json({ data: { message: 'Archived' } });
   } catch (err: any) {
@@ -227,7 +227,7 @@ router.post('/resources/:id/archive', requireAuth(), (req: Request, res: Respons
 });
 
 // ── Crawler Settings ──
-router.get('/crawler/settings', requireAuth(), (req: Request, res: Response) => {
+await router.get('/crawler/settings', requireAuth(), (req: Request, res: Response) => {
   try {
     const keys = ['github_token', 'api_base_url', 'auto_verify_threshold', 'max_resources_per_run', 'crawl_schedule'];
     const settings: Record<string, string> = {};
@@ -236,7 +236,7 @@ router.get('/crawler/settings', requireAuth(), (req: Request, res: Response) => 
     }
     const recentRuns = db.prepare(
       "SELECT * FROM crawler_runs ORDER BY started_at DESC LIMIT 10"
-    ).all() as any[];
+    await ).all() as any[];
     res.json({ data: { settings, recent_runs: recentRuns } });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -251,7 +251,7 @@ router.post('/crawler/settings', requireAuth(), (req: Request, res: Response) =>
       if (typeof value === 'string') {
         db.prepare(
           "INSERT INTO crawler_settings (key, value, updated_at) VALUES (?, ?, datetime('now')) ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = datetime('now')"
-        ).run(key, value, value);
+        await ).run(key, value, value);
       }
     }
     auditLog(user.id, 'update_crawler_settings', 'settings', null, { keys: Object.keys(settings) }, req.ip || '');
@@ -266,7 +266,7 @@ router.post('/crawler/run', requireAuth(), (req: Request, res: Response) => {
     const user = (req as any).user;
     const runId = db.prepare(
       "INSERT INTO crawler_runs (trigger, status) VALUES (?, 'running')"
-    ).run(user.username);
+    await ).run(user.username);
 
     res.json({ data: { run_id: Number(runId.lastInsertRowid), message: 'Crawler started' } });
 
@@ -294,7 +294,7 @@ router.post('/crawler/run', requireAuth(), (req: Request, res: Response) => {
             const metaResp = await axios.get(`https://api.github.com/repos/${item.repository.owner.login}/${item.repository.name}`, { headers, timeout: 10000 });
             const repo = metaResp.data;
 
-            const existing = db.prepare('SELECT id FROM agents WHERE repository_url = ?').get(repo.html_url) as any;
+            await const existing = db.prepare('SELECT id FROM agents WHERE repository_url = ?').get(repo.html_url) as any;
             if (existing) { processed++; continue; }
 
             try {
@@ -316,7 +316,7 @@ router.post('/crawler/run', requireAuth(), (req: Request, res: Response) => {
                   required_skills, tags, tools_used, verification_score,
                   verification_status, verification_checks, stars, forks, watchers, is_featured, created_at, updated_at
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', '[]', 0.5, 'verified', '{}', ?, ?, ?, 0, datetime('now'), datetime('now'))
-              `).run(
+              await `).run(
                 json.name || repo.name, slug, json.type || 'agent', json.type || 'agent',
                 json.description || repo.description || '', json.author || repo.owner.login,
                 repo.html_url, json.homepage || null, json.license || repo.license?.spdx_id || null,
@@ -337,11 +337,11 @@ router.post('/crawler/run', requireAuth(), (req: Request, res: Response) => {
 
         db.prepare(
           "UPDATE crawler_runs SET status = 'completed', resources_found = ?, resources_processed = ?, resources_failed = ?, finished_at = datetime('now') WHERE id = ?"
-        ).run(uniqueRepos.length, processed, failed, Number(runId.lastInsertRowid));
+        await ).run(uniqueRepos.length, processed, failed, Number(runId.lastInsertRowid));
       } catch (err: any) {
         db.prepare(
           "UPDATE crawler_runs SET status = 'failed', resources_failed = 1, finished_at = datetime('now') WHERE id = ?"
-        ).run(Number(runId.lastInsertRowid));
+        await ).run(Number(runId.lastInsertRowid));
       }
     }, 100);
   } catch (err: any) {
@@ -350,11 +350,11 @@ router.post('/crawler/run', requireAuth(), (req: Request, res: Response) => {
 });
 
 // ── Users ──
-router.get('/users', requireAuth(), (req: Request, res: Response) => {
+await router.get('/users', requireAuth(), (req: Request, res: Response) => {
   try {
     const users = db.prepare(
       "SELECT id, username, email, role, is_active, last_login, created_at FROM admin_users ORDER BY created_at"
-    ).all() as any[];
+    await ).all() as any[];
     res.json({ data: users });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -381,7 +381,7 @@ router.post('/users', requireAuth(), async (req: Request, res: Response) => {
 router.post('/users/:id/toggle-active', requireAuth(), (req: Request, res: Response) => {
   try {
     const user = (req as any).user;
-    db.prepare('UPDATE admin_users SET is_active = 1 - is_active WHERE id = ?').run(req.params.id);
+    await db.prepare('UPDATE admin_users SET is_active = 1 - is_active WHERE id = ?').run(req.params.id);
     auditLog(user.id, 'toggle_user_active', 'admin_user', Number(req.params.id), {}, req.ip || '');
     res.json({ data: { message: 'Updated' } });
   } catch (err: any) {
@@ -390,13 +390,13 @@ router.post('/users/:id/toggle-active', requireAuth(), (req: Request, res: Respo
 });
 
 // ── Audit Logs ──
-router.get('/audit-logs', requireAuth(), (req: Request, res: Response) => {
+await router.get('/audit-logs', requireAuth(), (req: Request, res: Response) => {
   try {
     const page = parseInt(req.query.page as string || '1');
     const limit = parseInt(req.query.limit as string || '50');
     const logs = db.prepare(
       "SELECT al.*, au.username FROM audit_logs al LEFT JOIN admin_users au ON au.id = al.admin_id ORDER BY al.created_at DESC LIMIT ? OFFSET ?"
-    ).all(limit, (page - 1) * limit) as any[];
+    await ).all(limit, (page - 1) * limit) as any[];
     res.json({ data: logs });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -404,7 +404,7 @@ router.get('/audit-logs', requireAuth(), (req: Request, res: Response) => {
 });
 
 // ── Settings (general config in crawler_settings KV store) ──
-router.get('/settings', requireAuth(), (req: Request, res: Response) => {
+await router.get('/settings', requireAuth(), (req: Request, res: Response) => {
   try {
     const keys = [
       'solana_usdc_wallet',
@@ -440,7 +440,7 @@ router.post('/settings', requireAuth(), (req: Request, res: Response) => {
       if (typeof value === 'string') {
         db.prepare(
           "INSERT INTO crawler_settings (key, value, updated_at) VALUES (?, ?, datetime('now')) ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = datetime('now')"
-        ).run(key, value, value);
+        await ).run(key, value, value);
       }
     }
     auditLog(user.id, 'update_settings', 'settings', null, { keys: Object.keys(settings) }, req.ip || '');
@@ -451,7 +451,7 @@ router.post('/settings', requireAuth(), (req: Request, res: Response) => {
 });
 
 // ── Featured Requests ──
-router.get('/featured-requests', requireAuth(), (req: Request, res: Response) => {
+await router.get('/featured-requests', requireAuth(), (req: Request, res: Response) => {
   try {
     const status = (req.query.status as string) || 'all';
     const where = status === 'all' ? '' : `WHERE status = ?`;
@@ -459,7 +459,7 @@ router.get('/featured-requests', requireAuth(), (req: Request, res: Response) =>
 
     const requests = db.prepare(
       `SELECT * FROM featured_requests ${where} ORDER BY created_at DESC`
-    ).all(...params) as any[];
+    await ).all(...params) as any[];
 
     res.json({ data: requests });
   } catch (err: any) {
@@ -470,16 +470,16 @@ router.get('/featured-requests', requireAuth(), (req: Request, res: Response) =>
 router.post('/featured-requests/:id/approve', requireAuth(), (req: Request, res: Response) => {
   try {
     const user = (req as any).user;
-    const request = db.prepare('SELECT * FROM featured_requests WHERE id = ?').get(Number(req.params.id)) as any;
+    await const request = db.prepare('SELECT * FROM featured_requests WHERE id = ?').get(Number(req.params.id)) as any;
     if (!request) return res.status(404).json({ error: 'Request not found' });
 
     db.prepare(
       `UPDATE featured_requests SET status = 'approved', reviewed_at = datetime('now'), reviewed_by = ? WHERE id = ?`
-    ).run(user.id, Number(req.params.id));
+    await ).run(user.id, Number(req.params.id));
 
     // If resource_id exists, mark it as featured
     if (request.resource_id) {
-      db.prepare('UPDATE agents SET is_featured = 1 WHERE id = ?').run(request.resource_id);
+      await db.prepare('UPDATE agents SET is_featured = 1 WHERE id = ?').run(request.resource_id);
     }
 
     auditLog(user.id, 'approve_featured', 'featured_request', Number(req.params.id), { resource_name: request.resource_name }, req.ip || '');
@@ -494,7 +494,7 @@ router.post('/featured-requests/:id/reject', requireAuth(), (req: Request, res: 
     const user = (req as any).user;
     db.prepare(
       `UPDATE featured_requests SET status = 'rejected', reviewed_at = datetime('now'), reviewed_by = ? WHERE id = ?`
-    ).run(user.id, Number(req.params.id));
+    await ).run(user.id, Number(req.params.id));
 
     auditLog(user.id, 'reject_featured', 'featured_request', Number(req.params.id), {}, req.ip || '');
     res.json({ data: { message: 'Featured request rejected' } });
@@ -507,7 +507,7 @@ router.post('/featured-requests/:id/toggle-paid', requireAuth(), (req: Request, 
   try {
     db.prepare(
       `UPDATE featured_requests SET paid = 1 - IFNULL(paid, 0) WHERE id = ?`
-    ).run(Number(req.params.id));
+    await ).run(Number(req.params.id));
 
     res.json({ data: { message: 'Payment status toggled' } });
   } catch (err: any) {

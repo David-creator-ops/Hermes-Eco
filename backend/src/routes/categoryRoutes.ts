@@ -3,7 +3,7 @@ import * as catService from '../services/categoryService';
 
 const router = Router();
 
-router.get('/', (req, res) => {
+await router.get('/', (req, res) => {
   try {
     res.json({ data: catService.getAllCategories() });
   } catch (err: any) {
@@ -11,7 +11,7 @@ router.get('/', (req, res) => {
   }
 });
 
-router.get('/:slug', (req, res) => {
+await router.get('/:slug', (req, res) => {
   try {
     const cat = catService.getCategoryBySlug(req.params.slug);
     if (!cat) return res.status(404).json({ error: 'Category not found' });

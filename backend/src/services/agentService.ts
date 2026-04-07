@@ -70,34 +70,34 @@ export function listAgents(opts: ListOpts = {}) {
   }
 
   const where = w.join(' AND ');
-  const count: any = db.prepare(`SELECT COUNT(*) as total FROM agents a ${join} WHERE ${where}`).get(...p);
+  await const count: any = db.prepare(`SELECT COUNT(*) as total FROM agents a ${join} WHERE ${where}`).get(...p);
   const rows = db.prepare(
     `SELECT a.* FROM agents a ${join} WHERE ${where} ${extra} ORDER BY ${sortCol} LIMIT ? OFFSET ?`
-  ).all(...p, ...searchParams, limit, offset) as any[];
+  await ).all(...p, ...searchParams, limit, offset) as any[];
 
   return { agents: rows.map(parse), total: count.total, page, limit };
 }
 
 export function getAgentById(id: number) {
-  const row = db.prepare('SELECT * FROM agents WHERE id = ? AND is_archived = 0').get(id) as any;
+  await const row = db.prepare('SELECT * FROM agents WHERE id = ? AND is_archived = 0').get(id) as any;
   return row ? parse(row) : null;
 }
 
 export function getAgentBySlug(slug: string) {
-  const row = db.prepare('SELECT * FROM agents WHERE slug = ? AND is_archived = 0').get(slug) as any;
+  await const row = db.prepare('SELECT * FROM agents WHERE slug = ? AND is_archived = 0').get(slug) as any;
   return row ? parse(row) : null;
 }
 
 export function getFeaturedAgents(n = 4) {
-  return db.prepare('SELECT * FROM agents WHERE is_featured = 1 AND is_archived = 0 ORDER BY stars DESC LIMIT ?').all(n).map(parse);
+  await return db.prepare('SELECT * FROM agents WHERE is_featured = 1 AND is_archived = 0 ORDER BY stars DESC LIMIT ?').all(n).map(parse);
 }
 
 export function getRecentAgents(n = 10) {
-  return db.prepare('SELECT * FROM agents WHERE is_archived = 0 ORDER BY created_at DESC LIMIT ?').all(n).map(parse);
+  await return db.prepare('SELECT * FROM agents WHERE is_archived = 0 ORDER BY created_at DESC LIMIT ?').all(n).map(parse);
 }
 
 export function getAgentsByResourceType(resourceType: string, n = 10) {
-  return db.prepare('SELECT * FROM agents WHERE resource_type = ? AND is_archived = 0 ORDER BY stars DESC LIMIT ?').all(resourceType, n).map(parse);
+  await return db.prepare('SELECT * FROM agents WHERE resource_type = ? AND is_archived = 0 ORDER BY stars DESC LIMIT ?').all(resourceType, n).map(parse);
 }
 
 export function upsertAgent(data: {
@@ -128,7 +128,7 @@ export function upsertAgent(data: {
       verification_checks=excluded.verification_checks,
       stars=excluded.stars, forks=excluded.forks, watchers=excluded.watchers,
       updated_at=excluded.updated_at, is_archived=0
-  `).run(
+  await `).run(
     data.name, data.slug, data.resource_type, data.type, data.description, data.long_description ?? null,
     data.author_github, data.repository_url, data.homepage_url ?? null,
     data.license ?? null, data.hermes_version_required ?? null,
@@ -144,7 +144,7 @@ export function upsertAgent(data: {
 }
 
 export function getResourceStats() {
-  return db.prepare("SELECT resource_type, COUNT(*) as count FROM agents WHERE is_archived = 0 GROUP BY resource_type ORDER BY count DESC").all() as any[];
+  await return db.prepare("SELECT resource_type, COUNT(*) as count FROM agents WHERE is_archived = 0 GROUP BY resource_type ORDER BY count DESC").all() as any[];
 }
 
 export function getCategoryStats() {
@@ -155,17 +155,17 @@ export function getCategoryStats() {
     WHERE c.type = 'usecase'
     GROUP BY c.id
     ORDER BY count DESC
-  `).all() as any[];
+  await `).all() as any[];
 }
 
 export function getComplexityStats() {
-  return db.prepare("SELECT complexity_level, COUNT(*) as count FROM agents WHERE is_archived = 0 GROUP BY complexity_level ORDER BY count DESC").all() as any[];
+  await return db.prepare("SELECT complexity_level, COUNT(*) as count FROM agents WHERE is_archived = 0 GROUP BY complexity_level ORDER BY count DESC").all() as any[];
 }
 
 export function getDeploymentStats() {
-  return db.prepare("SELECT deployment_type, COUNT(*) as count FROM agents WHERE is_archived = 0 GROUP BY deployment_type ORDER BY count DESC").all() as any[];
+  await return db.prepare("SELECT deployment_type, COUNT(*) as count FROM agents WHERE is_archived = 0 GROUP BY deployment_type ORDER BY count DESC").all() as any[];
 }
 
 export function getMaintenanceStats() {
-  return db.prepare("SELECT maintenance_status, COUNT(*) as count FROM agents WHERE is_archived = 0 GROUP BY maintenance_status ORDER BY count DESC").all() as any[];
+  await return db.prepare("SELECT maintenance_status, COUNT(*) as count FROM agents WHERE is_archived = 0 GROUP BY maintenance_status ORDER BY count DESC").all() as any[];
 }
