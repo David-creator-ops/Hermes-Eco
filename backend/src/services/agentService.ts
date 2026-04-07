@@ -23,12 +23,6 @@ interface ListOpts {
   tools_used?: string; tags?: string; search?: string; category_slug?: string;
 }
 
-function makeWhere(col: string) {
-  return IS_POSTGRES
-    ? `EXISTS (SELECT 1 FROM jsonb_array_elements_text(a.${col}::jsonb) as j WHERE j = $${col})`
-    : `EXISTS (SELECT 1 FROM json_each(a.${col}) WHERE value = ?)`;
-}
-
 export async function listAgents(opts: ListOpts = {}) {
   const page = opts.page || 1;
   const limit = Math.min(opts.limit || 20, 100);
@@ -55,19 +49,19 @@ export async function listAgents(opts: ListOpts = {}) {
 
   let extra = '';
   if (opts.tools_used) {
-    extra += ' AND ' + makeWhere('tools_used').replace('$' + 'tools_used' , '$' + (p.length + 1)).replace('?', '?');
+    extra += ' AND EXISTS (SELECT 1 FROM json_each(a.tools_used) WHERE value = ?)';
     p.push(opts.tools_used);
   }
   if (opts.tier2_categories) {
-    extra += ' AND ' + makeWhere('tier2_categories').replace('?', '?');
+    extra += ' AND EXISTS (SELECT 1 FROM json_each(a.tier2_categories) WHERE value = ?)';
     p.push(opts.tier2_categories);
   }
   if (opts.required_skills) {
-    extra += ' AND ' + makeWhere('required_skills').replace('?', '?');
+    extra += ' AND EXISTS (SELECT 1 FROM json_each(a.required_skills) WHERE value = ?)';
     p.push(opts.required_skills);
   }
   if (opts.tags) {
-    extra += ' AND ' + makeWhere('tags').replace('?', '?');
+    extra += ' AND EXISTS (SELECT 1 FROM json_each(a.tags) WHERE value = ?)';
     p.push(opts.tags);
   }
 
@@ -119,7 +113,7 @@ export async function upsertAgent(data: {
   verification_status: string; verification_checks: Record<string, boolean>;
   stars: number; forks: number; watchers: number; last_commit_date?: string;
 }) {
-  const nowSQL = IS_POSTGRES ? 'CURRENT_TIMESTAMP' : "datetime('now')";
+  const now = new Date().toISOString();
   await db.prepare(`
     INSERT INTO agents (
       name, slug, resource_type, type, description, long_description,
@@ -129,7 +123,7 @@ export async function upsertAgent(data: {
       tags, tools_used, verification_status, verification_score,
       verification_checks, stars, forks, watchers,
       updated_at, last_crawled
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,${nowSQL},${nowSQL})
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30)
     ON CONFLICT(repository_url) DO UPDATE SET
       name=excluded.name, description=excluded.description,
       tags=excluded.tags, tools_used=excluded.tools_used,
@@ -149,7 +143,8 @@ export async function upsertAgent(data: {
     data.maintenance_status ?? 'active',
     JSON.stringify(data.tags ?? []), JSON.stringify(data.tools_used ?? []),
     data.verification_status, data.verification_score, JSON.stringify(data.verification_checks ?? {}),
-    data.stars, data.forks, data.watchers
+    data.stars, data.forks, data.watchers,
+    now, now
   );
 }
 
