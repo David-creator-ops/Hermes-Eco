@@ -174,3 +174,55 @@ export async function seedDefaultUsers() {
 
   console.log('✅ Seeded default admin users');
 }
+
+// ── Functions required by adminRoutes.ts ──
+
+export async function authenticateUser(username: string, password: string) {
+  const bcrypt = require('bcryptjs');
+  const crypto = require('crypto');
+  
+  const user = await db.prepare(
+    'SELECT * FROM admin_users WHERE username = ? AND is_active = 1'
+  ).get(username) as any;
+  if (!user) return null;
+
+  const valid = await bcrypt.compare(password, user.password_hash);
+  if (!valid) return null;
+
+  // Create session token
+  const token = crypto.randomBytes(32).toString('hex');
+  const expiresAt = IS_POSTGRES
+    ? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+    : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
+  await db.prepare(
+    "INSERT INTO admin_sessions (user_id, token_hash, expires_at) VALUES (?, ?, ?)"
+  ).run(user.id, token, expiresAt);
+
+  await db.prepare(
+    "UPDATE admin_users SET last_login = CURRENT_TIMESTAMP WHERE id = ?"
+  ).run(user.id);
+
+  return {
+    token,
+    user: { id: user.id, username: user.username, email: user.email, role: user.role }
+  };
+}
+
+export async function verifyToken(tokenHash: string) {
+  const sql = IS_POSTGRES
+    ? "SELECT u.id, u.username, u.email, u.role, u.is_active, u.last_login FROM admin_sessions s JOIN admin_users u ON u.id = s.user_id WHERE s.token_hash = ? AND s.expires_at > CURRENT_TIMESTAMP"
+    : "SELECT u.id, u.username, u.email, u.role, u.is_active, u.last_login FROM admin_sessions s JOIN admin_users u ON u.id = s.user_id WHERE s.token_hash = ? AND s.expires_at > datetime('now')";
+
+  return (await db.prepare(sql).get(tokenHash)) as any;
+}
+
+export async function getCrawlerSetting(key: string): Promise<string | null> {
+  const row = await db.prepare('SELECT value FROM crawler_settings WHERE key = ?').get(key) as any;
+  return row ? row.value : null;
+}
+
+export async function hashBcrypt(password: string): Promise<string> {
+  const bcrypt = require('bcryptjs');
+  return bcrypt.hash(password, 12);
+}
