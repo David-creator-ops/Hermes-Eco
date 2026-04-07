@@ -1,12 +1,10 @@
-import path from 'path';
-
 const DATABASE_URL = process.env.DATABASE_URL || '';
 
 let db: any;
 
 if (DATABASE_URL && DATABASE_URL.startsWith('postgresql')) {
   // PostgreSQL mode (Railway production)
-  const { Client, Pool } = require('pg');
+  const { Pool } = require('pg');
 
   const pool = new Pool({
     connectionString: DATABASE_URL,
@@ -21,12 +19,10 @@ if (DATABASE_URL && DATABASE_URL.startsWith('postgresql')) {
 
   db = {
     exec(sql: string) {
-      // Split by ; and execute each statement
-      const statements = sql.split(';').map(s => s.trim()).filter(s => s.length > 0);
+      const statements = sql.split(';').map((s: string) => s.trim()).filter((s: string) => s.length > 0);
       if (statements.length === 1 && !statements[0].includes('?')) {
         return pool.query(statements[0]).then(() => ({}));
       }
-      // For complex multi-statement SQL without params
       return pool.query(sql).then(() => ({}));
     },
     prepare(sql: string) {
@@ -50,7 +46,8 @@ if (DATABASE_URL && DATABASE_URL.startsWith('postgresql')) {
   };
 } else {
   // SQLite mode (local development)
-  import Database from 'better-sqlite3';
+  const Database = require('better-sqlite3');
+  const path = require('path');
   const dbPath = process.env.DATABASE_PATH || path.join(process.cwd(), 'hermes.db');
   db = new Database(dbPath);
   db.pragma('journal_mode = WAL');
