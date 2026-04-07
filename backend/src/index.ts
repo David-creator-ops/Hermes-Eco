@@ -18,6 +18,7 @@ const app = express();
 const PORT = parseInt(process.env.PORT || '3001', 10);
 const NODE_ENV = process.env.NODE_ENV || 'development';
 
+app.set('trust proxy', true);
 app.use(cors());
 app.use(express.json());
 
