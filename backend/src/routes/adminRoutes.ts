@@ -296,7 +296,7 @@ router.post('/crawler/run', requireAuth(), async (req: Request, res: Response) =
   try {
     const user = (req as any).user;
     const runId = await db.prepare(
-      "INSERT INTO crawler_runs (trigger, status) VALUES (?, 'running') RETURNING id"
+      "INSERT INTO crawler_runs (trigger, status) VALUES ($1, 'running') RETURNING id"
     ).get(user.username);
 
     res.json({ data: { run_id: Number(runId.id), message: 'Crawler started' } });
@@ -305,98 +305,73 @@ router.post('/crawler/run', requireAuth(), async (req: Request, res: Response) =
     setTimeout(async () => {
       try {
         const axios = require('axios');
-        // First try DB setting, fall back to env var
-        let githubToken = (await getCrawlerSetting('github_token')) || '';
+        // Prefer env var, fall back to DB setting
+        let githubToken = process.env.GH_PAT || process.env.GITHUB_TOKEN || (await getCrawlerSetting('github_token')) || '';
         const maxResources = parseInt((await getCrawlerSetting('max_resources_per_run')) || '30', 10);
-        // If token was masked in the DB (has dots), use env var instead
-        if (githubToken.includes('•')) {
-          githubToken = process.env.GH_PAT || process.env.GITHUB_TOKEN || '';
-        }
         const headers: Record<string, string> = { Accept: 'application/vnd.github.v3+json' };
         if (githubToken) headers.Authorization = `token ${githubToken}`;
 
-        // Strategy: search for repos by topic, keyword, or known orgs that might use Hermes
-        // Also directly scan known repos from our registry
-        const allItems = [];
-
-        // 1. Search repos with hermes-related topics/keywords
+        // Strategy: search for repos via GitHub repo search, then check for .hermes-eco.json
+        const allItems: any[] = [];
         const searchQueries = [
-          'topic:hermes-eco',
-          'topic:hermes+topic:ai',
-          'hermes+agent+registry',
-          'hermes+ai+agent',
+          'hermes-agent topic:ai',
+          'hermes agent topic:llm',
+          'hermes-eco',
+          'hermes registry',
+          'hermes-agent tools',
+          'hermes-agent skills',
+          'hermes ai agent',
         ];
 
-        for (const query of searchQueries) {
+        for (const q of searchQueries) {
           try {
             const resp = await axios.get(
-              `https://api.github.com/search/repos?q=${query}&sort=stars&order=desc&per_page=30`,
+              `https://api.github.com/search/repositories?q=${encodeURIComponent(q)}&sort=stars&order=desc&per_page=20`,
               { headers, timeout: 15000 }
             );
             for (const item of (resp.data.items || [])) {
               allItems.push(item);
             }
-          } catch { /* skip failed queries */ }
+          } catch (e: any) { /* skip */ }
         }
 
-        // 2. Also scan repos from the known .hermes-eco.json repos (direct fetch)
-        try {
-          const codeResp = await axios.get(
-            'https://api.github.com/search/code?q=filename:.hermes-eco.json&per_page=30',
-            { headers, timeout: 15000 }
-          );
-          for (const item of (codeResp.data.items || [])) {
-            // Convert code search result to repo-like object
-            allItems.push(item.repository);
-          }
-        } catch { /* code search needs auth most of the time */ }
-
-        // Deduplicate by full_name
-        const seen = new Set();
-        const uniqueRepos = [];
-        for (const item of allItems) {
-          const fullName = item.full_name;
-          if (!seen.has(fullName) && fullName) {
-            seen.add(fullName);
-            uniqueRepos.push(item);
-          }
-        }
+        // Deduplicate
+        const seen = new Set<string>();
+        const uniqueRepos = allItems.filter((i: any) => {
+          const key = i.full_name;
+          if (seen.has(key) || !key) return false;
+          seen.add(key);
+          return true;
+        }).slice(0, maxResources);
 
         let processed = 0;
         let failed = 0;
 
-        for (const repo of (uniqueRepos as any[]).slice(0, maxResources)) {
+        for (const repo of (uniqueRepos as any[])) {
           try {
-            // Skip forks with 0 stars to avoid noise
-            if (repo.fork && repo.stargazers_count < 5) continue;
-
-            if (!repo.owner) {
-              // Fetch full repo details
-              const metaResp = await axios.get(`https://api.github.com/repos/${repo.full_name}`, { headers, timeout: 10000 });
-              Object.assign(repo, metaResp.data);
-            }
+            if (repo.fork && repo.stargazers_count < 10) continue;
 
             const existing = await db.prepare('SELECT id FROM agents WHERE repository_url = ?').get(repo.html_url) as any;
             if (existing) { processed++; continue; }
 
             try {
-              // Try both master and main branches
               let fileResp;
+              // Try default branch first
               try {
                 fileResp = await axios.get(
-                  `https://api.github.com/repos/${repo.owner.login}/${repo.name}/contents/.hermes-eco.json?${Date.now()}`,
+                  `https://api.github.com/repos/${repo.owner.login}/${repo.name}/contents/.hermes-eco.json`,
                   { headers, timeout: 10000 }
                 );
               } catch {
-                // Try main branch
+                // Try main branch explicitly
                 fileResp = await axios.get(
-                  `https://api.github.com/repos/${repo.owner.login}/${repo.name}/contents/.hermes-eco.json?ref=main&${Date.now()}`,
+                  `https://api.github.com/repos/${repo.owner.login}/${repo.name}/contents/.hermes-eco.json?ref=main`,
                   { headers, timeout: 10000 }
                 );
               }
+
               const content = Buffer.from(fileResp.data.content, 'base64').toString('utf-8');
               const json = JSON.parse(content);
-
               const slug = (json.name || repo.name)
                 .toLowerCase().replace(/[^a-z0-9\s-]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-').trim();
 
@@ -407,9 +382,10 @@ router.post('/crawler/run', requireAuth(), async (req: Request, res: Response) =
                   tier1_category, tier2_categories, complexity_level, deployment_type,
                   required_skills, tags, tools_used, verification_score,
                   verification_status, verification_checks, stars, forks, watchers, is_featured, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', '[]', 0.5, 'verified', '{}', ?, ?, ?, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, '[]', '[]', 0.5, 'verified', '{}', $16, $17, $18, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
               `).run(
-                json.name || repo.name, slug, json.type || 'agent', json.type || 'agent',
+                json.name || repo.name, slug,
+                json.type || 'agent', json.type || 'agent',
                 json.description || repo.description || '', json.author || repo.owner.login,
                 repo.html_url, json.homepage || null, json.license || repo.license?.spdx_id || null,
                 json.hermes_version || null, json.category || null,
@@ -420,6 +396,7 @@ router.post('/crawler/run', requireAuth(), async (req: Request, res: Response) =
               );
               processed++;
             } catch {
+              // No .hermes-eco.json — skip silently
               failed++;
             }
           } catch {
