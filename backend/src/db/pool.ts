@@ -21,9 +21,22 @@ if (IS_POSTGRES) {
   }
 
   db = {
-    exec(sql: string) {
-      console.log('PostgreSQL: skipping exec() for table creation (tables managed separately)');
-      return Promise.resolve({});
+    async exec(sql: string) {
+      // Execute multi-statement SQL for migrations
+      const statements = sql.split(';').filter((s: string) => s.trim());
+      for (const stmt of statements) {
+        const trimmed = stmt.trim();
+        if (trimmed) {
+          try {
+            await pool.query(trimmed);
+          } catch (err: any) {
+            // Ignore if table already exists
+            if (!err.message?.includes('already exists') && !err.message?.includes('does not exist')) {
+              console.log('Migration exec:', err.message?.slice(0, 100));
+            }
+          }
+        }
+      }
     },
     prepare(sql: string) {
       return {
