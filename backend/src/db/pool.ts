@@ -55,3 +55,4 @@ if (IS_POSTGRES) {
 }
 
 export default db;
+
