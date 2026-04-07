@@ -51,6 +51,12 @@ CREATE TABLE IF NOT EXISTS categories (
   icon TEXT
 );
 
+CREATE TABLE IF NOT EXISTS agent_categories (
+  agent_id INTEGER REFERENCES agents(id) ON DELETE CASCADE,
+  category_id INTEGER REFERENCES categories(id) ON DELETE CASCADE,
+  PRIMARY KEY (agent_id, category_id)
+);
+
 CREATE TABLE IF NOT EXISTS submissions (
   id SERIAL PRIMARY KEY,
   source TEXT NOT NULL DEFAULT 'web_form',
