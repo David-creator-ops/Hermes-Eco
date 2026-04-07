@@ -296,10 +296,10 @@ router.post('/crawler/run', requireAuth(), async (req: Request, res: Response) =
   try {
     const user = (req as any).user;
     const runId = await db.prepare(
-      "INSERT INTO crawler_runs (trigger, status) VALUES ($1, 'running')"
-    ).run(user.username);
+      "INSERT INTO crawler_runs (trigger, status) VALUES (?, 'running') RETURNING id"
+    ).get(user.username);
 
-    res.json({ data: { run_id: Number(runId.lastInsertRowid), message: 'Crawler started' } });
+    res.json({ data: { run_id: Number(runId.id), message: 'Crawler started' } });
 
     // Run async in background
     setTimeout(async () => {
