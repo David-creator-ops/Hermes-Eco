@@ -12,7 +12,6 @@ export async function listAgents(req: Request, res: Response) {
       verification_status: verification_status as string,
       tools_used: tools_used as string,
       tags: tags as string,
-      license: license as string,
       search: search as string,
     });
     res.json({ data: result.agents, total: result.total, page: result.page, limit: result.limit });

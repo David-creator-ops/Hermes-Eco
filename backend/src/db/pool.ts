@@ -3,7 +3,7 @@ import path from 'path';
 
 const dbPath = process.env.DATABASE_PATH || path.join(process.cwd(), 'hermes.db');
 
-const db = new Database(dbPath);
+const db: Database.Database = new Database(dbPath);
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 

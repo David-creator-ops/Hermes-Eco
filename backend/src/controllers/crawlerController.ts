@@ -8,7 +8,7 @@ export async function upsertAgent(req: Request, res: Response) {
       return res.status(400).json({ error: 'repository_url is required' });
     }
     const result = await agentService.upsertAgent(data);
-    res.json({ data: { id: result.id }, message: 'Agent upserted successfully' });
+    res.json({ data: { id: result?.id }, message: 'Agent upserted successfully' });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
