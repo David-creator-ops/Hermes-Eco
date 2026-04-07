@@ -471,6 +471,19 @@ router.get('/audit-logs', requireAuth(), async (req: Request, res: Response) => 
   }
 });
 
+// ── Fetch READMEs ──
+router.post('/fetch-readmes', requireAuth('super_admin'), async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    const { fetchAndSummarize } = require('../db/fetch-readmes');
+    const { updated, skipped } = await fetchAndSummarize();
+    auditLog(user.id, 'fetch_readmes', 'admin', null, { updated }, req.ip || '');
+    res.json({ data: { message: `Updated ${updated} READMEs, ${skipped} skipped` } });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Seed DB ──
 router.post('/seed', requireAuth('super_admin'), async (req: Request, res: Response) => {
   try {

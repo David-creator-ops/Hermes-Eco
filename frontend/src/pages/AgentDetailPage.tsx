@@ -284,7 +284,6 @@ function StatRow({ label, value }: { label: string; value: React.ReactNode }) {
 function InstallBtn({ a }: { a: any }) {
   const [copied, setCopied] = useState(false);
   const cmd = `hermes install agent:${a.author_github}/${a.slug}`;
-  const isFeatured = a.is_featured === 1;
 
   return (
     <button onClick={() => { navigator.clipboard.writeText(cmd); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
