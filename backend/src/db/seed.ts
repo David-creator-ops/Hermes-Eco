@@ -315,27 +315,21 @@ const AGENTS = [
   },
 ];
 
-async function seed() {
+export async function seedDatabase(): Promise<number> {
   console.log('Seeding Hermes Eco database...');
 
   let inserted = 0;
-  let failed = 0;
 
   for (const agent of AGENTS) {
     try {
       await upsertAgent(agent);
-      console.log(`  ${agent.name} (${agent.resource_type}) inserted`);
+      console.log(`  ${agent.name} (${agent.resource_type}) upserted`);
       inserted++;
     } catch (err: any) {
-      console.error(`  Failed: ${agent.name} - ${err.message}`);
-      failed++;
+      console.log(`  Skipped: ${agent.name} - ${err.message?.slice(0, 80)}`);
     }
   }
 
-  console.log(`\n  Total: ${inserted} inserted, ${failed} failed`);
+  console.log(`\n  Total: ${inserted} agents processed`);
+  return inserted;
 }
-
-seed().then(() => process.exit(0)).catch(err => {
-  console.error('Seed error:', err);
-  process.exit(1);
-});

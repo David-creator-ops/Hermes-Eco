@@ -11,9 +11,6 @@ import submissionRoutes from './routes/submissionRoutes';
 import adminRoutes from './routes/adminRoutes';
 import { seedDefaultUsers } from './services/adminService';
 
-// Auto-seed on startup (one-time)
-import('./db/seed').catch(() => {});
-
 const app = express();
 
 const PORT = parseInt(process.env.PORT || '3001', 10);

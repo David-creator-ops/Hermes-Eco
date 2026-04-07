@@ -475,17 +475,8 @@ router.get('/audit-logs', requireAuth(), async (req: Request, res: Response) => 
 router.post('/seed', requireAuth('super_admin'), async (req: Request, res: Response) => {
   try {
     const user = (req as any).user;
-    const { upsertAgent } = require('../services/agentService');
-    const SEED_AGENTS = require('../db/seed') as any;
-
-    let inserted = 0;
-    for (const agent of SEED_AGENTS.DEFAULT || SEED_AGENTS.AGENTS || []) {
-      try {
-        await upsertAgent(agent);
-        inserted++;
-      } catch { /* skip duplicates */ }
-    }
-
+    const { seedDatabase } = require('../db/seed');
+    const inserted = await seedDatabase();
     auditLog(user.id, 'seed_db', 'db', null, { inserted }, req.ip || '');
     res.json({ data: { message: `Seeded ${inserted} agents` } });
   } catch (err: any) {
