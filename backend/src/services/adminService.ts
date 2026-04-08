@@ -128,9 +128,18 @@ export async function deleteUser(id: number) {
 }
 
 export const auditLog = async (data: { admin_id: number; action: string; resource_type?: string; resource_id?: number; change_details?: string; ip_address?: string }) => {
-  await db.prepare(
-    'INSERT INTO audit_logs (admin_id, action, resource_type, resource_id, change_details, ip_address) VALUES (?, ?, ?, ?, ?, ?)'
-  ).run(data.admin_id, data.action, data.resource_type ?? null, data.resource_id ?? null, data.change_details ?? null, data.ip_address ?? null);
+  // Guard: if action is empty or admin_id is null/undefined, skip to prevent DB constraint errors
+  if (!data.action || !data.admin_id) {
+    console.warn('auditLog skipped: missing action or admin_id', { action: data.action, admin_id: data.admin_id });
+    return;
+  }
+  try {
+    await db.prepare(
+      'INSERT INTO audit_logs (admin_id, action, resource_type, resource_id, change_details, ip_address) VALUES (?, ?, ?, ?, ?, ?)'
+    ).run(data.admin_id, data.action, data.resource_type ?? null, data.resource_id ?? null, data.change_details ?? null, data.ip_address ?? null);
+  } catch (err) {
+    console.error('auditLog failed:', err.message);
+  }
 };
 
 export async function getCrawlerSettings() {
