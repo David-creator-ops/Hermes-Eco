@@ -135,110 +135,6 @@ function extractTags(readme: string, repoDesc: string): string[] {
   return [...tags].slice(0, 10);
 }
 
-// POST /api/submit/analyze — paste a repo URL, get auto-analyzed metadata
-router.post('/analyze', async (req, res) => {
-  try {
-    const { repository_url } = req.body;
-    if (!repository_url || typeof repository_url !== 'string') return res.status(400).json({ error: 'repository_url is required' });
-
-    const match = repository_url.match(/github\.com\/([^/]+)\/([^/?#]+)/);
-    if (!match) return res.status(400).json({ error: 'Invalid GitHub URL. Use format: https://github.com/owner/repo' });
-
-    const [, owner, repo] = match;
-
-    const existing = await db.prepare('SELECT id, slug FROM agents WHERE repository_url = ?').get(repository_url) as any;
-    if (existing) return res.status(409).json({ error: 'This repo is already in the registry', existing_slug: existing.slug });
-
-    const repoResp = await ghFetch(`https://api.github.com/repos/${owner}/${repo}`);
-    if (!repoResp.ok) return res.status(404).json({ error: `GitHub repo not found (${repoResp.status})` });
-    const repoData = await repoResp.json();
-
-    if (repoData.private) return res.status(400).json({ error: 'Cannot analyze private repositories' });
-
-    let readme = '';
-    for (const branch of ['main', 'master']) {
-      try {
-        const r = await fetch(`https://raw.githubusercontent.com/${owner}/${repo}/${branch}/README.md`, {
-          headers: GH_TOKEN() ? { Authorization: `token ${GH_TOKEN()}` } : {},
-          signal: AbortSignal.timeout(8000),
-        } as RequestInit);
-        if (r.ok) { readme = await r.text(); break; }
-      } catch { /* try next */ }
-    }
-
-    let hermesJson: any = null;
-    try {
-      const hjResp = await ghFetch(`https://api.github.com/repos/${owner}/${repo}/contents/.hermes-eco.json`);
-      if (hjResp.ok) {
-        const hjData = await hjResp.json();
-        hermesJson = JSON.parse(Buffer.from(hjData.content, 'base64').toString('utf-8'));
-      }
-    } catch { /* no hermes json */ }
-
-    let tree: string[] = [];
-    try {
-      const treeResp = await ghFetch(`https://api.github.com/repos/${owner}/${repo}/git/trees/${repoData.default_branch || 'main'}?recursive=1`);
-      if (treeResp.ok) {
-        const treeData = await treeResp.json();
-        tree = (treeData.tree || []).filter((f: any) => f.type === 'blob').map((f: any) => f.path);
-      }
-    } catch { /* no tree */ }
-
-    const detection = detectResourceType(tree, readme);
-    const toolsUsed = extractToolsUsed(tree, readme);
-    const tags = extractTags(readme, repoData.description || '');
-
-    let longDescription = '';
-    if (readme && readme.length > 100) {
-      longDescription = summarizeReadme(readme, 800);
-    }
-
-    const result: Record<string, any> = {
-      name: hermesJson?.name || repoData.name,
-      description: hermesJson?.description || repoData.description || '',
-      long_description: longDescription,
-      type: hermesJson?.type || detection.type,
-      type_confidence: detection.confidence,
-      type_auto_detected: !hermesJson?.type,
-      author_github: hermesJson?.author || owner,
-      repository_url: repository_url,
-      homepage_url: hermesJson?.homepage || repoData.homepage || null,
-      license: hermesJson?.license || repoData.license?.spdx_id || null,
-      stars: repoData.stargazers_count || 0,
-      forks: repoData.forks_count || 0,
-      watchers: repoData.watchers_count || 0,
-      is_fork: repoData.fork || false,
-      has_hermes_json: !!hermesJson,
-      hermes_json: hermesJson,
-      tools_used: toolsUsed,
-      tags: tags,
-      complexity_level: hermesJson?.complexity || null,
-      deployment_type: hermesJson?.deployment || null,
-      last_commit_date: repoData.pushed_at || null,
-      open_issues: repoData.open_issues_count || 0,
-      language: repoData.language || null,
-      file_count: tree.length,
-      key_files: tree.filter(p =>
-        p.toLowerCase().includes('skill') ||
-        p.toLowerCase().includes('tool') ||
-        p.toLowerCase().includes('agent') ||
-        p.toLowerCase().includes('workflow') ||
-        p.toLowerCase().includes('cron') ||
-        p.toLowerCase().includes('mcp') ||
-        p.toLowerCase().includes('docker') ||
-        p === 'pyproject.toml' ||
-        p === 'package.json' ||
-        p === 'Dockerfile' ||
-        p === '.hermes-eco.json'
-      ).slice(0, 20),
-    };
-
-    res.json({ data: result });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
 // Validate submission payload
 function validateSubmission(data: any) {
   const errors: string[] = [];
@@ -345,8 +241,8 @@ router.get('/all', async (req, res) => {
   }
 });
 
-// POST /api/submit/batch (for crawler)
-router.post('/batch', async (req, res) => {
+// POST /api/console/analyze — admin-only, analyzes a repo URL
+router.post('/analyze', async (req, res) => {
   try {
     const items = req.body.items || [];
     let count = 0;

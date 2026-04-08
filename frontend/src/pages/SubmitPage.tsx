@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Copy, Check, Github, FileCode, ExternalLink, Search, Loader2, AlertCircle, CheckCircle, Zap } from 'lucide-react';
+import { ArrowLeft, Copy, Check, Github, FileCode, ExternalLink } from 'lucide-react';
 
 const TYPES = [
   { value: 'agent', label: 'Agent', icon: '🤖' },
@@ -12,17 +12,6 @@ const TYPES = [
   { value: 'model-config', label: 'Model Config', icon: '🎯' },
   { value: 'router', label: 'Router', icon: '🔄' },
 ];
-
-const TYPE_DESCRIPTIONS: Record<string, string> = {
-  agent: 'Autonomous AI that reasons & acts on its own',
-  skill: 'Reusable procedure the agent learns & improves',
-  tool: 'Individual capability the agent can call',
-  integration: 'Connector to an external service or API',
-  workflow: 'Multi-step automation recipe',
-  'memory-system': 'Persistent knowledge & context store',
-  'model-config': 'Prompt template, personality, or routing strategy',
-  router: 'Orchestration layer across agents & data sources',
-};
 
 const CATEGORIES = [
   { value: 'data_analysis', label: '📊 Data & Analysis' },
@@ -39,35 +28,8 @@ const CATEGORIES = [
   { value: 'creative', label: '🎨 Creative' },
 ];
 
-interface AnalysisResult {
-  name: string;
-  description: string;
-  long_description: string;
-  type: string;
-  type_confidence: number;
-  type_auto_detected: boolean;
-  author_github: string;
-  repository_url: string;
-  homepage_url: string | null;
-  license: string | null;
-  stars: number;
-  forks: number;
-  watchers: number;
-  is_fork: boolean;
-  has_hermes_json: boolean;
-  tools_used: string[];
-  tags: string[];
-  complexity_level: string | null;
-  deployment_type: string | null;
-  last_commit_date: string | null;
-  open_issues: number;
-  language: string | null;
-  file_count: number;
-  key_files: string[];
-}
-
 export function SubmitPage() {
-  const [tab, setTab] = useState<'analyze' | 'json' | 'form'>('analyze');
+  const [tab, setTab] = useState<'json' | 'form'>('json');
 
   return (
     <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8 pt-20">
@@ -77,22 +39,15 @@ export function SubmitPage() {
 
       <div className="mb-8">
         <h1 className="text-2xl font-semibold text-white tracking-tight mb-1">Add Your Resource</h1>
-        <p className="text-[13px] text-[#707070]">Paste a GitHub URL and we&apos;ll auto-detect everything.</p>
+        <p className="text-[13px] text-[#707070]">Pick the method that works best for you.</p>
       </div>
 
-      {/* Tab switcher */}
       <div className="flex bg-[#0d0d0d] rounded-xl border border-[#1a1a1a] p-1 mb-8">
-        <button onClick={() => setTab('analyze')}
-          className={`flex-1 flex items-center justify-center gap-2 h-10 rounded-lg text-[13px] font-medium transition-all ${
-            tab === 'analyze' ? 'bg-[#151515] text-white' : 'text-[#666] hover:text-[#999]'
-          }`}>
-          <Zap className="w-4 h-4" /> Auto-Analyze
-        </button>
         <button onClick={() => setTab('json')}
           className={`flex-1 flex items-center justify-center gap-2 h-10 rounded-lg text-[13px] font-medium transition-all ${
             tab === 'json' ? 'bg-[#151515] text-white' : 'text-[#666] hover:text-[#999]'
           }`}>
-          <Github className="w-4 h-4" /> .hermes-eco.json
+          <Github className="w-4 h-4" /> Add via GitHub
         </button>
         <button onClick={() => setTab('form')}
           className={`flex-1 flex items-center justify-center gap-2 h-10 rounded-lg text-[13px] font-medium transition-all ${
@@ -102,206 +57,7 @@ export function SubmitPage() {
         </button>
       </div>
 
-      {tab === 'analyze' ? <AnalyzeMethod /> : tab === 'json' ? <GitHubMethod /> : <WebFormMethod />}
-    </div>
-  );
-}
-
-/* ── Method 1: Auto-Analyze ── */
-function AnalyzeMethod() {
-  const [url, setUrl] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
-  const [submitted, setSubmitted] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-
-  const analyze = async () => {
-    setError('');
-    setAnalysis(null);
-    if (!url.match(/github\.com\/[^/]+\/[^/]+/)) {
-      setError('Please enter a valid GitHub URL (https://github.com/owner/repo)');
-      return;
-    }
-    setLoading(true);
-    try {
-      const resp = await fetch('/api/submit/analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ repository_url: url.trim().replace(/\/$/, '') }),
-      });
-      const data = await resp.json();
-      if (!resp.ok) throw new Error(data.error || 'Analysis failed');
-      setAnalysis(data.data);
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const submitAnalyzed = async () => {
-    if (!analysis) return;
-    setSubmitting(true);
-    try {
-      const resp = await fetch('/api/submit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: analysis.name,
-          type: analysis.type,
-          description: analysis.long_description || analysis.description,
-          author: analysis.author_github,
-          repository: analysis.repository_url,
-          license: analysis.license,
-          complexity: analysis.complexity_level,
-          deployment: analysis.deployment_type,
-          tags: analysis.tags,
-        }),
-      });
-      const data = await resp.json();
-      if (!resp.ok) throw new Error(data.error || 'Submission failed');
-      setSubmitted(true);
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  if (submitted) {
-    return (
-      <div className="text-center py-8">
-        <div className="w-12 h-12 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center mx-auto mb-4">
-          <CheckCircle className="w-6 h-6 text-emerald-400" />
-        </div>
-        <h2 className="text-lg font-semibold text-white mb-1">Submitted!</h2>
-        <p className="text-[13px] text-[#888] mb-6">Your resource will be verified and listed within 24 hours.</p>
-        <button onClick={() => { setSubmitted(false); setAnalysis(null); setUrl(''); setError(''); }}
-          className="text-[#7c3aed] text-[13px] hover:text-[#a78bfa] transition-colors">
-          Submit another resource →
-        </button>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-6">
-      {/* URL Input */}
-      <div>
-        <label className="text-[12px] font-medium text-[#CCC] mb-1.5 block">GitHub Repository URL</label>
-        <div className="flex gap-2">
-          <div className="relative flex-1">
-            <Github className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#555]" />
-            <input
-              type="url"
-              value={url}
-              onChange={e => setUrl(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && analyze()}
-              placeholder="https://github.com/owner/repo"
-              className="w-full h-11 pl-10 pr-3 rounded-lg bg-[#111] border border-[#1e1e1e] text-[13px] text-white placeholder:text-[#555] focus:outline-none focus:border-[#7c3aed]/40 transition-colors"
-            />
-          </div>
-          <button onClick={analyze} disabled={loading}
-            className="flex items-center gap-2 h-11 px-5 rounded-lg bg-white text-[#0a0a0a] font-medium text-[13px] hover:bg-[#e8e8e8] transition-colors disabled:opacity-50 whitespace-nowrap">
-            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
-            {loading ? 'Analyzing...' : 'Analyze'}
-          </button>
-        </div>
-      </div>
-
-      {error && (
-        <div className="p-3 rounded-lg border border-red-500/20 bg-red-500/5 flex items-start gap-2">
-          <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
-          <span className="text-[12px] text-red-400">{error}</span>
-        </div>
-      )}
-
-      {/* Analysis Results */}
-      {analysis && (
-        <div className="space-y-4">
-          {/* Quick Stats */}
-          <div className="grid grid-cols-4 gap-3">
-            <MiniStat label="Stars" value={analysis.stars} />
-            <MiniStat label="Forks" value={analysis.forks} />
-            <MiniStat label="Files" value={analysis.file_count} />
-            <MiniStat label="Language" value={analysis.language || '?'} />
-          </div>
-
-          {/* Detected Type */}
-          <div className="p-4 rounded-xl border border-[#7c3aed]/20 bg-[#7c3aed]/5">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-[12px] font-medium text-[#c4b5fd]">Detected Type</span>
-              {analysis.type_auto_detected ? (
-                <span className="text-[10px] text-[#888] bg-[#151515] px-2 py-0.5 rounded">Auto-detected ({Math.round(analysis.type_confidence * 100)}%)</span>
-              ) : (
-                <span className="text-[10px] text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded">From .hermes-eco.json</span>
-              )}
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-lg">{TYPES.find(t => t.value === analysis.type)?.icon}</span>
-              <span className="text-[14px] font-medium text-white">{TYPES.find(t => t.value === analysis.type)?.label}</span>
-            </div>
-            <p className="text-[11px] text-[#888] mt-1">{TYPE_DESCRIPTIONS[analysis.type]}</p>
-          </div>
-
-          {/* Key Files Found */}
-          {analysis.key_files.length > 0 && (
-            <div className="p-4 rounded-xl border border-[#1a1a1a] bg-[#0d0d0d]">
-              <h4 className="text-[12px] font-medium text-[#888] mb-2">Key Files Detected</h4>
-              <div className="flex flex-wrap gap-1.5">
-                {analysis.key_files.map(f => (
-                  <span key={f} className="text-[11px] text-[#888] bg-[#151515] px-2 py-1 rounded border border-[#1a1a1a] font-mono">{f}</span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Tools Used */}
-          {analysis.tools_used.length > 0 && (
-            <div className="p-4 rounded-xl border border-[#1a1a1a] bg-[#0d0d0d]">
-              <h4 className="text-[12px] font-medium text-[#888] mb-2">Tools & Capabilities</h4>
-              <div className="flex flex-wrap gap-1.5">
-                {analysis.tools_used.map(t => (
-                  <span key={t} className="text-[11px] text-[#a78bfa] bg-[#7c3aed]/10 border border-[#7c3aed]/20 px-2 py-1 rounded">{t.replace(/_/g, ' ')}</span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Summary */}
-          {analysis.long_description && (
-            <div className="p-4 rounded-xl border border-[#1a1a1a] bg-[#0d0d0d]">
-              <h4 className="text-[12px] font-medium text-[#888] mb-2">Auto-Generated Summary</h4>
-              <p className="text-[12px] text-[#BBB] leading-relaxed">{analysis.long_description}</p>
-            </div>
-          )}
-
-          {/* Meta Info */}
-          <div className="grid grid-cols-2 gap-3">
-            {analysis.license && <MetaItem label="License" value={analysis.license} />}
-            {analysis.author_github && <MetaItem label="Author" value={`@${analysis.author_github}`} />}
-            {analysis.last_commit_date && <MetaItem label="Last Commit" value={new Date(analysis.last_commit_date).toLocaleDateString()} />}
-            {analysis.is_fork && <MetaItem label="Fork" value="Yes" />}
-          </div>
-
-          {/* Tags */}
-          {analysis.tags.length > 0 && (
-            <div className="flex flex-wrap gap-1.5">
-              {analysis.tags.map(t => (
-                <span key={t} className="text-[11px] text-[#555] bg-[#151515] px-2 py-1 rounded">#{t}</span>
-              ))}
-            </div>
-          )}
-
-          {/* Submit Button */}
-          <button onClick={submitAnalyzed} disabled={submitting}
-            className="w-full h-11 rounded-lg bg-white text-[#0a0a0a] font-medium text-[14px] hover:bg-[#e8e8e8] transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
-            {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
-            {submitting ? 'Submitting...' : 'Looks Good — Submit to Registry'}
-          </button>
-        </div>
-      )}
+      {tab === 'json' ? <GitHubMethod /> : <WebFormMethod />}
     </div>
   );
 }
@@ -541,24 +297,6 @@ function WebFormMethod() {
         {loading ? 'Submitting...' : 'Submit Resource'}
       </button>
     </form>
-  );
-}
-
-function MiniStat({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div className="p-3 rounded-lg bg-[#0d0d0d] border border-[#1a1a1a] text-center">
-      <div className="text-base font-semibold text-white tabular-nums">{typeof value === 'number' ? value.toLocaleString() : value}</div>
-      <div className="text-[10px] text-[#555] mt-0.5">{label}</div>
-    </div>
-  );
-}
-
-function MetaItem({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between py-2 px-3 rounded-lg bg-[#0d0d0d] border border-[#1a1a1a]">
-      <span className="text-[11px] text-[#555]">{label}</span>
-      <span className="text-[12px] text-[#DDD]">{value}</span>
-    </div>
   );
 }
 

@@ -87,6 +87,7 @@ export function AdminShell({ user, token, onLogout }: { user: any; token: string
 
   const nav = [
     { label: 'Dashboard', path: '/console', icon: '◉', roles: ['super_admin', 'moderator', 'analyst', 'support'] },
+    { label: 'Analyze', path: '/console/analyze', icon: '⚡', roles: ['super_admin', 'moderator'] },
     { label: 'Submissions', path: '/console/submissions', icon: '◈', roles: ['super_admin', 'moderator'] },
     { label: 'Resources', path: '/console/resources', icon: '◆', roles: ['super_admin', 'moderator'] },
     { label: 'Featured', path: '/console/featured', icon: '★', roles: ['super_admin', 'moderator'] },
@@ -156,6 +157,7 @@ export function AdminShell({ user, token, onLogout }: { user: any; token: string
         <div className="max-w-5xl mx-auto px-6 py-8">
           <Routes>
             <Route index element={<DashboardPage />} />
+            <Route path="analyze" element={<AnalyzePage />} />
             <Route path="submissions" element={<SubmissionsPage />} />
             <Route path="resources" element={<ResourcesPage />} />
             <Route path="crawler" element={<CrawlerPage />} />
@@ -996,6 +998,214 @@ function FeaturedRequestsPage() {
               </div>
             </div>
           ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Analyze Repo ──
+function AnalyzePage() {
+  const [url, setUrl] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [analysis, setAnalysis] = useState<any>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const token = getStoredToken();
+
+  const TYPES_MAP: Record<string, { label: string; icon: string; desc: string }> = {
+    agent: { label: 'Agent', icon: '🤖', desc: 'Autonomous AI that reasons & acts on its own' },
+    skill: { label: 'Skill', icon: '🛠️', desc: 'Reusable procedure the agent learns & improves' },
+    tool: { label: 'Tool', icon: '🔧', desc: 'Individual capability the agent can call' },
+    integration: { label: 'Integration', icon: '🔌', desc: 'Connector to an external service or API' },
+    workflow: { label: 'Workflow', icon: '⚙️', desc: 'Multi-step automation recipe' },
+    'memory-system': { label: 'Memory System', icon: '🧠', desc: 'Persistent knowledge & context store' },
+    'model-config': { label: 'Model Config', icon: '🎯', desc: 'Prompt template, personality, or routing strategy' },
+    router: { label: 'Router', icon: '🔄', desc: 'Orchestration layer across agents & data sources' },
+  };
+
+  const analyze = async () => {
+    setError('');
+    setAnalysis(null);
+    setSubmitted(false);
+    if (!url.match(/github\.com\/[^/]+\/[^/]+/)) {
+      setError('Enter a valid GitHub URL (https://github.com/owner/repo)');
+      return;
+    }
+    setLoading(true);
+    try {
+      const resp = await fetch(`${API}/resources/analyze`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ repository_url: url.trim().replace(/\/$/, '') }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || 'Analysis failed');
+      setAnalysis(data.data);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const addDirectly = async () => {
+    if (!analysis) return;
+    setSubmitting(true);
+    try {
+      const resp = await fetch(`${API}/resources/add-analyzed`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(analysis),
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || 'Failed to add');
+      setSubmitted(true);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-xl font-semibold text-white tracking-tight">Analyze & Add Repo</h1>
+      </div>
+
+      <div className="p-4 rounded-xl border border-[#7c3aed]/20 bg-[#7c3aed]/5 mb-6">
+        <p className="text-[12px] text-[#c4b5fd] leading-relaxed">
+          Paste any public GitHub repo URL. The analyzer fetches its structure, auto-detects the resource type, extracts tools & tags, and generates a summary. Review the results then add it directly to the registry.
+        </p>
+      </div>
+
+      <div className="flex gap-2 mb-6">
+        <div className="relative flex-1">
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[#555] text-sm">🔗</span>
+          <input
+            type="url"
+            value={url}
+            onChange={e => setUrl(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && analyze()}
+            placeholder="https://github.com/owner/repo"
+            className="w-full h-10 pl-9 pr-3 rounded-lg bg-[#111] border border-[#1e1e1e] text-[13px] text-white placeholder:text-[#555] focus:outline-none focus:border-[#7c3aed]/40 transition-colors"
+          />
+        </div>
+        <button onClick={analyze} disabled={loading}
+          className="flex items-center gap-2 h-10 px-5 rounded-lg bg-white text-[#0a0a0a] font-medium text-[13px] hover:bg-[#e8e8e8] transition-colors disabled:opacity-50 whitespace-nowrap">
+          {loading ? '...' : 'Analyze'}
+        </button>
+      </div>
+
+      {error && (
+        <div className="p-3 rounded-lg border border-red-500/20 bg-red-500/5 mb-6">
+          <span className="text-[12px] text-red-400">{error}</span>
+        </div>
+      )}
+
+      {submitted && (
+        <div className="p-4 rounded-xl border border-emerald-500/20 bg-emerald-500/5 mb-6">
+          <span className="text-[13px] text-emerald-400 font-medium">Added to registry successfully!</span>
+        </div>
+      )}
+
+      {analysis && (
+        <div className="space-y-4">
+          <div className="grid grid-cols-5 gap-3">
+            {[
+              { label: 'Stars', value: analysis.stars },
+              { label: 'Forks', value: analysis.forks },
+              { label: 'Files', value: analysis.file_count },
+              { label: 'Language', value: analysis.language || '?' },
+              { label: 'Issues', value: analysis.open_issues },
+            ].map(s => (
+              <div key={s.label} className="p-3 rounded-lg bg-[#0d0d0d] border border-[#1a1a1a] text-center">
+                <div className="text-base font-semibold text-white tabular-nums">{typeof s.value === 'number' ? s.value.toLocaleString() : s.value}</div>
+                <div className="text-[10px] text-[#555] mt-0.5">{s.label}</div>
+              </div>
+            ))}
+          </div>
+
+          <div className="p-4 rounded-xl border border-[#7c3aed]/20 bg-[#7c3aed]/5">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[12px] font-medium text-[#c4b5fd]">Detected Type</span>
+              {analysis.type_auto_detected ? (
+                <span className="text-[10px] text-[#888] bg-[#151515] px-2 py-0.5 rounded">Auto-detected ({Math.round(analysis.type_confidence * 100)}%)</span>
+              ) : (
+                <span className="text-[10px] text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded">From .hermes-eco.json</span>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-lg">{TYPES_MAP[analysis.type]?.icon}</span>
+              <span className="text-[14px] font-medium text-white">{TYPES_MAP[analysis.type]?.label}</span>
+            </div>
+            <p className="text-[11px] text-[#888] mt-1">{TYPES_MAP[analysis.type]?.desc}</p>
+          </div>
+
+          {analysis.key_files?.length > 0 && (
+            <div className="p-4 rounded-xl border border-[#1a1a1a] bg-[#0d0d0d]">
+              <h4 className="text-[12px] font-medium text-[#888] mb-2">Key Files</h4>
+              <div className="flex flex-wrap gap-1.5">
+                {analysis.key_files.map((f: string) => (
+                  <span key={f} className="text-[10px] text-[#888] bg-[#151515] px-2 py-1 rounded border border-[#1a1a1a] font-mono">{f}</span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {analysis.tools_used?.length > 0 && (
+            <div className="p-4 rounded-xl border border-[#1a1a1a] bg-[#0d0d0d]">
+              <h4 className="text-[12px] font-medium text-[#888] mb-2">Tools & Capabilities</h4>
+              <div className="flex flex-wrap gap-1.5">
+                {analysis.tools_used.map((t: string) => (
+                  <span key={t} className="text-[11px] text-[#a78bfa] bg-[#7c3aed]/10 border border-[#7c3aed]/20 px-2 py-1 rounded">{t.replace(/_/g, ' ')}</span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {analysis.long_description && (
+            <div className="p-4 rounded-xl border border-[#1a1a1a] bg-[#0d0d0d]">
+              <h4 className="text-[12px] font-medium text-[#888] mb-2">Auto-Generated Summary</h4>
+              <p className="text-[12px] text-[#BBB] leading-relaxed">{analysis.long_description}</p>
+            </div>
+          )}
+
+          <div className="grid grid-cols-3 gap-3">
+            {analysis.license && (
+              <div className="flex items-center justify-between py-2 px-3 rounded-lg bg-[#0d0d0d] border border-[#1a1a1a]">
+                <span className="text-[11px] text-[#555]">License</span>
+                <span className="text-[12px] text-[#DDD]">{analysis.license}</span>
+              </div>
+            )}
+            {analysis.author_github && (
+              <div className="flex items-center justify-between py-2 px-3 rounded-lg bg-[#0d0d0d] border border-[#1a1a1a]">
+                <span className="text-[11px] text-[#555]">Author</span>
+                <span className="text-[12px] text-[#DDD]">@{analysis.author_github}</span>
+              </div>
+            )}
+            {analysis.last_commit_date && (
+              <div className="flex items-center justify-between py-2 px-3 rounded-lg bg-[#0d0d0d] border border-[#1a1a1a]">
+                <span className="text-[11px] text-[#555]">Last commit</span>
+                <span className="text-[12px] text-[#DDD]">{new Date(analysis.last_commit_date).toLocaleDateString()}</span>
+              </div>
+            )}
+          </div>
+
+          {analysis.tags?.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {analysis.tags.map((t: string) => (
+                <span key={t} className="text-[11px] text-[#555] bg-[#151515] px-2 py-1 rounded">#{t}</span>
+              ))}
+            </div>
+          )}
+
+          <button onClick={addDirectly} disabled={submitting}
+            className="w-full h-10 rounded-lg bg-white text-[#0a0a0a] font-medium text-[13px] hover:bg-[#e8e8e8] transition-colors disabled:opacity-50">
+            {submitting ? 'Adding...' : 'Add to Registry'}
+          </button>
         </div>
       )}
     </div>

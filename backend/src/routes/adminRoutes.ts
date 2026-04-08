@@ -230,6 +230,176 @@ router.post('/resources/:id/archive', requireAuth(), async (req: Request, res: R
   }
 });
 
+// ── Analyze Repo (admin only) ──
+router.post('/resources/analyze', requireAuth('super_admin'), async (req: Request, res: Response) => {
+  try {
+    const { repository_url } = req.body;
+    if (!repository_url || typeof repository_url !== 'string') return res.status(400).json({ error: 'repository_url is required' });
+
+    const GH_TOKEN = process.env.GH_PAT || process.env.GITHUB_TOKEN || '';
+    const ghHeaders: Record<string, string> = { Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' };
+    if (GH_TOKEN) ghHeaders.Authorization = `token ${GH_TOKEN}`;
+
+    const match = repository_url.match(/github\.com\/([^/]+)\/([^/?#]+)/);
+    if (!match) return res.status(400).json({ error: 'Invalid GitHub URL' });
+    const [, owner, repo] = match;
+
+    const repoResp = await fetch(`https://api.github.com/repos/${owner}/${repo}`, { headers: ghHeaders, signal: AbortSignal.timeout(10000) } as RequestInit);
+    if (!repoResp.ok) return res.status(404).json({ error: `GitHub repo not found (${repoResp.status})` });
+    const repoData = await repoResp.json();
+    if (repoData.private) return res.status(400).json({ error: 'Cannot analyze private repositories' });
+
+    let readme = '';
+    for (const branch of ['main', 'master']) {
+      try {
+        const r = await fetch(`https://raw.githubusercontent.com/${owner}/${repo}/${branch}/README.md`, {
+          headers: GH_TOKEN ? { Authorization: `token ${GH_TOKEN}` } : {},
+          signal: AbortSignal.timeout(8000),
+        } as RequestInit);
+        if (r.ok) { readme = await r.text(); break; }
+      } catch { /* try next */ }
+    }
+
+    let hermesJson: any = null;
+    try {
+      const hjResp = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/.hermes-eco.json`, { headers: ghHeaders, signal: AbortSignal.timeout(5000) } as RequestInit);
+      if (hjResp.ok) {
+        const hjData = await hjResp.json();
+        hermesJson = JSON.parse(Buffer.from(hjData.content, 'base64').toString('utf-8'));
+      }
+    } catch { /* no hermes json */ }
+
+    let tree: string[] = [];
+    try {
+      const treeResp = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/trees/${repoData.default_branch || 'main'}?recursive=1`, { headers: ghHeaders, signal: AbortSignal.timeout(8000) } as RequestInit);
+      if (treeResp.ok) {
+        const treeData = await treeResp.json();
+        tree = (treeData.tree || []).filter((f: any) => f.type === 'blob').map((f: any) => f.path);
+      }
+    } catch { /* no tree */ }
+
+    // Detect type
+    const paths = tree.map(p => p.toLowerCase());
+    const readmeLower = (readme || '').toLowerCase();
+    let detectedType = 'agent';
+    let confidence = 0.3;
+
+    if (paths.some(p => p.includes('skills/') || p.includes('optional-skills/'))) { detectedType = 'skill'; confidence = 0.9; }
+    else if (paths.some(p => p.includes('toolsets.py') || p.includes('tools/') || p.includes('model_tools.py'))) { detectedType = 'tool'; confidence = 0.85; }
+    else if (paths.some(p => p.includes('cron/') || p.includes('workflow')) || readmeLower.includes('cron job') || readmeLower.includes('scheduled task')) { detectedType = 'workflow'; confidence = 0.8; }
+    else if (paths.some(p => p.includes('mcp_serve') || p.includes('mcp-')) || readmeLower.includes('mcp server')) { detectedType = 'integration'; confidence = 0.85; }
+    else if (paths.some(p => p.includes('qdrant') || p.includes('chroma') || p.includes('vector') || p.includes('memory'))) { detectedType = 'memory-system'; confidence = 0.8; }
+    else if (paths.some(p => p.includes('router') || p.includes('gateway/'))) { detectedType = 'router'; confidence = 0.75; }
+    else if (paths.some(p => p.includes('prompt') || p.includes('personality') || p.includes('soul.md'))) { detectedType = 'model-config'; confidence = 0.75; }
+    else if (paths.some(p => p.includes('agent/') || p.includes('run_agent') || p.includes('cli.py')) || readmeLower.includes('autonomous agent')) { detectedType = 'agent'; confidence = 0.85; }
+
+    // Extract tools
+    const tools: Set<string> = new Set();
+    const allText = tree.join(' ').toLowerCase() + ' ' + readmeLower;
+    const knownTools: [string, RegExp][] = [
+      ['terminal', /\bterminal\b|\bshell\b|\bbash\b/],
+      ['web_search', /\bweb.?search\b|\btavily\b|\bserpapi\b/],
+      ['browser', /\bbrowser\b|\bplaywright\b|\bselenium\b/],
+      ['code_execution', /\bcode.?exec|\bpython\b.*exec/],
+      ['vision', /\bvision\b|\bimage.?analy/],
+      ['tts', /\btext.?to.?speech|\btts\b/],
+      ['memory', /\bmemory\b|\bchroma\b|\bqdrant\b/],
+      ['cronjob', /\bcron\b/],
+    ];
+    for (const [tool, regex] of knownTools) { if (regex.test(allText)) tools.add(tool); }
+
+    // Extract tags
+    const tags: Set<string> = new Set();
+    const keywords: [string, RegExp][] = [
+      ['rag', /\brag\b/], ['automation', /\bautomat/], ['scraping', /\bscrap/], ['nlp', /\bnlp\b/],
+      ['data-analysis', /\bdata.?analy/], ['code-generation', /\bcode.?gen/], ['multi-agent', /\bmulti.?agent/],
+      ['docker', /\bdocker/], ['telegram', /\btelegram/], ['discord', /\bdiscord/],
+    ];
+    for (const [tag, regex] of keywords) { if (regex.test(readmeLower)) tags.add(tag); }
+
+    // Summarize readme
+    let longDescription = '';
+    if (readme && readme.length > 100) {
+      const clean = readme.replace(/!\[[^\]]*\]\([^)]*\)/g, '').replace(/<[^>]+>/g, '').replace(/\n{3,}/g, '\n\n').trim();
+      const paragraphs = clean.split('\n\n').filter(p => p.trim().length > 0);
+      for (const p of paragraphs) {
+        const lines = p.split('\n').map(l => l.trim()).filter(l => !l.startsWith('#') && l.length > 10);
+        if (lines.length > 0) {
+          longDescription = lines.join(' ').replace(/\s+/g, ' ').trim().slice(0, 800);
+          break;
+        }
+      }
+    }
+
+    res.json({ data: {
+      name: hermesJson?.name || repoData.name,
+      description: hermesJson?.description || repoData.description || '',
+      long_description: longDescription,
+      type: hermesJson?.type || detectedType,
+      type_confidence: confidence,
+      type_auto_detected: !hermesJson?.type,
+      author_github: hermesJson?.author || owner,
+      repository_url: repository_url,
+      homepage_url: hermesJson?.homepage || repoData.homepage || null,
+      license: hermesJson?.license || repoData.license?.spdx_id || null,
+      stars: repoData.stargazers_count || 0,
+      forks: repoData.forks_count || 0,
+      watchers: repoData.watchers_count || 0,
+      is_fork: repoData.fork || false,
+      has_hermes_json: !!hermesJson,
+      tools_used: [...tools],
+      tags: [...tags],
+      complexity_level: hermesJson?.complexity || null,
+      deployment_type: hermesJson?.deployment || null,
+      last_commit_date: repoData.pushed_at || null,
+      open_issues: repoData.open_issues_count || 0,
+      language: repoData.language || null,
+      file_count: tree.length,
+      key_files: tree.filter(p =>
+        p.toLowerCase().includes('skill') || p.toLowerCase().includes('tool') ||
+        p.toLowerCase().includes('agent') || p.toLowerCase().includes('workflow') ||
+        p === 'pyproject.toml' || p === 'package.json' || p === 'Dockerfile' || p === '.hermes-eco.json'
+      ).slice(0, 20),
+    }});
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /resources/add-analyzed — add analyzed repo directly to agents
+router.post('/resources/add-analyzed', requireAuth('super_admin'), async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    const a = req.body;
+
+    const existing = await db.prepare('SELECT id FROM agents WHERE repository_url = ?').get(a.repository_url) as any;
+    if (existing) return res.status(409).json({ error: 'This repo already exists in the registry' });
+
+    const slug = (a.name || '')
+      .toLowerCase().replace(/[^a-z0-9\s-]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-').trim();
+
+    await db.prepare(`
+      INSERT INTO agents (
+        name, slug, resource_type, type, description, long_description, author_github,
+        repository_url, homepage_url, license, stars, forks, watchers,
+        complexity_level, deployment_type, tags, tools_used,
+        verification_status, verification_score, is_featured, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'verified', 0.5, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    `).run(
+      a.name, slug, a.type, a.type,
+      a.description || '', a.long_description || '', a.author_github,
+      a.repository_url, a.homepage_url, a.license, a.stars || 0, a.forks || 0, a.watchers || 0,
+      a.complexity_level || null, a.deployment_type || null,
+      JSON.stringify(a.tags || []), JSON.stringify(a.tools_used || [])
+    );
+
+    auditLog(user.id, 'add_analyzed', 'agent', null, { name: a.name, type: a.type, repo: a.repository_url }, req.ip || '');
+    res.json({ data: { message: 'Added to registry', slug } });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Crawler Settings ──
 router.get('/crawler/settings', requireAuth(), async (req: Request, res: Response) => {
   try {
