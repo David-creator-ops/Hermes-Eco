@@ -12,6 +12,10 @@
     {
       "src": "/api/(.*)",
       "dest": "https://hermes-registry-backend-production.up.railway.app/api/$1"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/index.html"
     }
   ]
 }
