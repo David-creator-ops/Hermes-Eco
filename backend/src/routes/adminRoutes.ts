@@ -26,10 +26,31 @@ router.post('/auth/login', async (req: Request, res: Response) => {
   try {
     const { username, password } = req.body;
     if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
-    const result = await authenticateUser(username, password);
-    if (!result) return res.status(401).json({ error: 'Invalid credentials' });
-    auditLog(result.user.id, 'login', 'auth', null, {}, req.ip || '');
-    res.json({ data: { token: result.token, user: result.user } });
+
+    const bcrypt = require('bcryptjs');
+    const admin = await db.prepare('SELECT * FROM admin_users WHERE username = ? AND is_active = 1').get(username) as any;
+    if (!admin) return res.status(401).json({ error: 'Invalid credentials' });
+
+    const valid = await bcrypt.compare(password, admin.password_hash);
+    if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
+
+    // If 2FA is enabled, require 2FA code
+    if (admin.totp_enabled) {
+      res.json({ data: { requires_2fa: true, username } });
+      return;
+    }
+
+    // Generate session
+    const crypto = require('crypto');
+    const token = crypto.randomBytes(32).toString('hex');
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
+    await db.prepare('INSERT INTO admin_sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)').run(tokenHash, admin.id, expiresAt);
+    await db.prepare('UPDATE admin_users SET last_login = CURRENT_TIMESTAMP WHERE id = ?').run(admin.id);
+
+    auditLog(admin.id, 'login', 'auth', null, {}, req.ip || '');
+    res.json({ data: { token, user: { id: admin.id, username: admin.username, role: admin.role, totp_enabled: admin.totp_enabled } } });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -781,6 +802,131 @@ router.post('/auth/change-password', requireAuth(), async (req: Request, res: Re
     await db.prepare('UPDATE admin_users SET password_hash = ? WHERE id = ?').run(hash, user.id);
     auditLog(user.id, 'change_password', 'auth', user.id, {}, req.ip || '');
     res.json({ data: { message: 'Password changed successfully' } });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Update Profile (username/email) ──
+router.post('/auth/profile', requireAuth(), async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    const { username, email, current_password } = req.body;
+    if (!username && !email) return res.status(400).json({ error: 'Username or email required' });
+
+    const bcrypt = require('bcryptjs');
+    const existing = await db.prepare('SELECT password_hash FROM admin_users WHERE id = ?').get(user.id) as any;
+    if (!current_password) return res.status(400).json({ error: 'Current password required to change profile' });
+    const valid = await bcrypt.compare(current_password, existing.password_hash);
+    if (!valid) return res.status(401).json({ error: 'Current password is incorrect' });
+
+    if (username) {
+      const taken = await db.prepare('SELECT id FROM admin_users WHERE username = ? AND id != ?').get(username, user.id);
+      if (taken) return res.status(409).json({ error: 'Username already taken' });
+    }
+    if (email) {
+      const taken = await db.prepare('SELECT id FROM admin_users WHERE email = ? AND id != ?').get(email, user.id);
+      if (taken) return res.status(409).json({ error: 'Email already taken' });
+    }
+
+    await db.prepare('UPDATE admin_users SET username = COALESCE(?, username), email = COALESCE(?, email) WHERE id = ?')
+      .run(username || null, email || null, user.id);
+    auditLog(user.id, 'update_profile', 'auth', user.id, { username: !!username, email: !!email }, req.ip || '');
+    res.json({ data: { message: 'Profile updated successfully' } });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Setup 2FA ──
+router.post('/auth/2fa/setup', requireAuth(), async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    const speakeasy = require('speakeasy');
+    const QRCode = require('qrcode');
+
+    const secret = speakeasy.generateSecret({ name: `HermesEco:${user.username}`, length: 20 });
+    const qr = await QRCode.toDataURL(secret.otpauth_url);
+
+    await db.prepare('UPDATE admin_users SET totp_secret = ? WHERE id = ?').run(secret.base32, user.id);
+
+    res.json({ data: { secret: secret.base32, qr } });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Enable 2FA ──
+router.post('/auth/2fa/enable', requireAuth(), async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    const { code } = req.body;
+    if (!code) return res.status(400).json({ error: 'Verification code required' });
+
+    const admin = await db.prepare('SELECT totp_secret FROM admin_users WHERE id = ?').get(user.id) as any;
+    if (!admin?.totp_secret) return res.status(400).json({ error: '2FA not setup. Call setup first.' });
+
+    const speakeasy = require('speakeasy');
+    const verified = speakeasy.totp.verify({ secret: admin.totp_secret, encoding: 'base32', token: code, window: 1 });
+    if (!verified) return res.status(401).json({ error: 'Invalid code' });
+
+    await db.prepare('UPDATE admin_users SET totp_enabled = 1, totp_secret = ? WHERE id = ?').run(admin.totp_secret, user.id);
+    auditLog(user.id, 'enable_2fa', 'auth', user.id, {}, req.ip || '');
+    res.json({ data: { message: '2FA enabled successfully' } });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Disable 2FA ──
+router.post('/auth/2fa/disable', requireAuth(), async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    const { password } = req.body;
+    if (!password) return res.status(400).json({ error: 'Password required' });
+
+    const bcrypt = require('bcryptjs');
+    const admin = await db.prepare('SELECT password_hash FROM admin_users WHERE id = ?').get(user.id) as any;
+    const valid = await bcrypt.compare(password, admin.password_hash);
+    if (!valid) return res.status(401).json({ error: 'Invalid password' });
+
+    await db.prepare('UPDATE admin_users SET totp_enabled = 0, totp_secret = NULL WHERE id = ?').run(user.id);
+    auditLog(user.id, 'disable_2fa', 'auth', user.id, {}, req.ip || '');
+    res.json({ data: { message: '2FA disabled' } });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Verify 2FA Login ──
+router.post('/auth/2fa/verify', async (req: Request, res: Response) => {
+  try {
+    const { username, password, code } = req.body;
+    if (!username || !password || !code) return res.status(400).json({ error: 'Username, password and code required' });
+
+    const bcrypt = require('bcryptjs');
+    const admin = await db.prepare('SELECT * FROM admin_users WHERE username = ? AND is_active = 1').get(username) as any;
+    if (!admin) return res.status(401).json({ error: 'Invalid credentials' });
+
+    const valid = await bcrypt.compare(password, admin.password_hash);
+    if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
+
+    if (!admin.totp_enabled) return res.status(400).json({ error: '2FA not enabled for this account' });
+
+    const speakeasy = require('speakeasy');
+    const verified = speakeasy.totp.verify({ secret: admin.totp_secret, encoding: 'base32', token: code, window: 1 });
+    if (!verified) return res.status(401).json({ error: 'Invalid 2FA code' });
+
+    // Generate session
+    const crypto = require('crypto');
+    const token = crypto.randomBytes(32).toString('hex');
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
+    await db.prepare('INSERT INTO admin_sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)').run(tokenHash, admin.id, expiresAt);
+    await db.prepare('UPDATE admin_users SET last_login = CURRENT_TIMESTAMP WHERE id = ?').run(admin.id);
+
+    res.json({ data: { token, user: { id: admin.id, username: admin.username, role: admin.role, totp_enabled: admin.totp_enabled } } });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

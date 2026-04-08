@@ -80,6 +80,8 @@ CREATE TABLE IF NOT EXISTS admin_users (
   role TEXT NOT NULL,
   is_active INTEGER DEFAULT 1,
   last_login TEXT,
+  totp_secret TEXT,
+  totp_enabled INTEGER DEFAULT 0,
   created_at TEXT DEFAULT (CURRENT_TIMESTAMP)
 );
 

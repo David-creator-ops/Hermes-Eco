@@ -13,6 +13,9 @@ export function LoginPage({ onLogin }: { onLogin: (token: string, user: any) => 
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [twoFARequired, setTwoFARequired] = useState(false);
+  const [twoFACode, setTwoFACode] = useState('');
+  const [tempUser, setTempUser] = useState('');
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -26,6 +29,34 @@ export function LoginPage({ onLogin }: { onLogin: (token: string, user: any) => 
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Login failed');
+      
+      if (data.data.requires_2fa) {
+        setTwoFARequired(true);
+        setTempUser(username);
+        setLoading(false);
+        return;
+      }
+      
+      onLogin(data.data.token, data.data.user);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const submit2FA = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+    try {
+      const res = await fetch(`${API}/auth/2fa/verify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: tempUser, password, code: twoFACode }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '2FA verification failed');
       onLogin(data.data.token, data.data.user);
     } catch (err: any) {
       setError(err.message);
@@ -44,16 +75,33 @@ export function LoginPage({ onLogin }: { onLogin: (token: string, user: any) => 
           <span className="text-sm font-semibold text-[#f0f0f0]">Hermes <span className="text-[#7c3aed]">Console</span></span>
         </div>
 
-        <form onSubmit={submit} className="space-y-4 p-6 rounded-2xl border border-[#1a1a1a] bg-[#0a0a0a]">
-          <h2 className="text-lg font-semibold text-white mb-1">Sign in</h2>
-          <p className="text-[12px] text-[#666] mb-4">Manage the Hermes ecosystem</p>
+        <form onSubmit={twoFARequired ? submit2FA : submit} className="space-y-4 p-6 rounded-2xl border border-[#1a1a1a] bg-[#0a0a0a]">
+          <h2 className="text-lg font-semibold text-white mb-1">{twoFARequired ? 'Two-Factor Code' : 'Sign in'}</h2>
+          <p className="text-[12px] text-[#666] mb-4">{twoFARequired ? 'Enter code from your authenticator app' : 'Manage the Hermes ecosystem'}</p>
 
-          <div>
-            <label className="block text-[12px] text-[#888] mb-1.5">Username</label>
-            <input value={username} onChange={e => setUsername(e.target.value)}
-              className="w-full h-10 px-3 rounded-lg bg-[#111] border border-[#1e1e1e] text-[13px] text-white placeholder:text-[#555] focus:outline-none focus:border-[#7c3aed]/40 transition-colors"
-              placeholder="admin" autoFocus />
-          </div>
+          {twoFARequired ? (
+            <>
+              <div>
+                <label className="block text-[12px] text-[#888] mb-1.5">Authentication Code</label>
+                <input value={twoFACode} onChange={e => setTwoFACode(e.target.value)}
+                  placeholder="000000" maxLength={6}
+                  className="w-full h-10 px-3 rounded-lg bg-[#111] border border-[#1e1e1e] text-[13px] text-white placeholder:text-[#555] focus:outline-none focus:border-[#7c3aed]/40 transition-colors" />
+              </div>
+            </>
+          ) : (
+            <>
+              <div>
+                <label className="block text-[12px] text-[#888] mb-1.5">Username</label>
+                <input value={username} onChange={e => setUsername(e.target.value)}
+                  className="w-full h-10 px-3 rounded-lg bg-[#111] border border-[#1e1e1e] text-[13px] text-white placeholder:text-[#555] focus:outline-none focus:border-[#7c3aed]/40 transition-colors" />
+              </div>
+              <div>
+                <label className="block text-[12px] text-[#888] mb-1.5">Password</label>
+                <input type="password" value={password} onChange={e => setPassword(e.target.value)}
+                  className="w-full h-10 px-3 rounded-lg bg-[#111] border border-[#1e1e1e] text-[13px] text-white placeholder:text-[#555] focus:outline-none focus:border-[#7c3aed]/40 transition-colors" />
+              </div>
+            </>
+          )}
 
           <div>
             <label className="block text-[12px] text-[#888] mb-1.5">Password</label>
@@ -451,17 +499,19 @@ function ResourcesPage() {
   const [items, setItems] = useState<any[]>([]);
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(true);
   const limit = 30;
   const token = getStoredToken();
 
   const fetchItems = () => {
+    setLoading(true);
     fetch(`${API}/resources?search=${search}&page=${page}&limit=${limit}`, { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.json()).then(d => setItems(d.data || []));
+      .then(r => r.json())
+      .then(d => { setItems(d.data || []); console.log('Resources:', d.data); })
+      .finally(() => setLoading(false));
   };
 
-  useEffect(() => { setPage(1); }, [search]);
-
-  useEffect(() => { fetchItems(); }, [search]);
+  useEffect(() => { fetchItems(); }, [search, page]);
 
   const toggleFeatured = async (id: number) => {
     await fetch(`${API}/resources/${id}/toggle-featured`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
@@ -496,56 +546,70 @@ function ResourcesPage() {
       </div>
 
       {/* Bulk Actions */}
-      <div className="mb-6 p-4 rounded-xl border border-[#1a1a1a] bg-[#0a0a0a]">
-        <h3 className="text-[12px] font-medium text-[#888] mb-3">Data Enrichment</h3>
-        <div className="flex flex-wrap gap-2">
-          <BulkActionButton
-            onClick={async () => {
-              await fetch(`${API}/fetch-readmes`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
-              fetchItems();
-            }}
-            label="Fetch READMEs"
-            description="Pull READMEs from GitHub & generate summaries"
-          />
-          <BulkActionButton
-            onClick={async () => {
-              await fetch(`${API}/verify-agents`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
-              fetchItems();
-            }}
-            label="Verify & Enrich"
-            description="Fetch live GitHub stats + verify repositories"
-          />
+        <div className="mb-6 p-4 rounded-xl border border-[#1a1a1a] bg-[#0a0a0a]">
+          <h3 className="text-[12px] font-medium text-[#888] mb-3">Data Enrichment</h3>
+          <div className="flex flex-wrap gap-2">
+            <BulkActionButton
+              onClick={async () => {
+                await fetch(`${API}/fetch-readmes`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+                fetchItems();
+              }}
+              label="Fetch READMEs"
+              description="Pull READMEs from GitHub & generate summaries"
+            />
+            <BulkActionButton
+              onClick={async () => {
+                await fetch(`${API}/verify-agents`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+                fetchItems();
+              }}
+              label="Verify & Enrich"
+              description="Fetch live GitHub stats + verify repositories"
+            />
+            <BulkActionButton
+              onClick={async () => {
+                if (!confirm('Security scan ALL resources? This may take a while.')) return;
+                await fetch(`${API}/security-scan`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+                fetchItems();
+              }}
+              label="Security Scan All"
+              description="Scan all repos for security threats"
+            />
+          </div>
         </div>
-      </div>
 
-      {items.length === 0 ? (
-        <div className="py-20 text-center text-[#444] text-sm">No resources</div>
+      {loading ? (
+        <div className="py-20 text-center text-[#444]">Loading...</div>
+      ) : items.length === 0 ? (
+        <div className="py-20 text-center text-[#444] text-sm">No resources found</div>
       ) : (
         <>
           <div className="rounded-lg border border-[#1a1a1a] divide-y divide-[#1a1a1a] bg-[#0a0a0a]">
             {items.map((r: any) => (
-              <div key={r.id} className="flex items-center justify-between px-5 py-2.5">
-                <div className="min-w-0">
+              <div key={r.id} className="flex items-center justify-between px-5 py-3 hover:bg-[#0f0f0f] transition-colors">
+                <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <span className="text-[13px] text-[#CCC] font-medium truncate">{r.name}</span>
                     {r.is_featured && <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400">★</span>}
+                    {r.security_verdict === 'dangerous' && <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-500/10 text-red-400">⚠️</span>}
                   </div>
-                  <div className="text-[11px] text-[#555]">{r.resource_type} · {r.author_github} · ⭐{r.stars}</div>
+                  <div className="text-[11px] text-[#555] flex items-center gap-2 mt-1">
+                    <span className="px-1.5 py-0.5 rounded bg-[#151515] text-[#777]">{r.resource_type}</span>
+                    <span>@{r.author_github}</span>
+                    <span>⭐{r.stars}</span>
+                    <span className={`${r.trust_level === 'trusted' ? 'text-blue-400' : r.security_verdict === 'safe' ? 'text-emerald-400' : 'text-amber-400'}`}>
+                      {r.trust_level || r.security_verdict || 'pending'}
+                    </span>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  <span className={`text-[10px] px-2 py-0.5 rounded capitalize ${
-                    r.verification_status === 'verified' ? 'bg-emerald-500/10 text-emerald-400' :
-                    r.verification_status === 'unverified' ? 'bg-amber-500/10 text-amber-400' :
-                    'bg-red-500/10 text-red-400'
-                  }`}>{r.verification_status}</span>
+                <div className="flex items-center gap-1.5 flex-shrink-0">
+                  <a href={`/agents/${r.slug}`} target="_blank" rel="noopener"
+                    className="h-7 px-2 rounded text-[10px] bg-[#151515] text-[#555] hover:text-white" title="View">👁</a>
                   <button onClick={() => scanOne(r.id)}
-                    className="h-6 px-2 rounded text-[10px] transition-colors bg-[#151515] text-[#555] hover:text-[#7c3aed] hover:bg-[#7c3aed]/10" title="Run security scan">🔒</button>
+                    className="h-7 px-2 rounded text-[10px] bg-[#151515] text-[#555] hover:text-emerald-400" title="Security scan">🔒</button>
                   <button onClick={() => toggleFeatured(r.id)}
-                    className={`h-6 px-2 rounded text-[10px] transition-colors ${
-                      r.is_featured ? 'bg-amber-500/10 text-amber-400' : 'bg-[#151515] text-[#555] hover:text-white'
-                    }`}>{r.is_featured ? '★' : '☆'}</button>
+                    className={`h-7 px-2 rounded text-[10px] ${r.is_featured ? 'bg-amber-500/10 text-amber-400' : 'bg-[#151515] text-[#555] hover:text-white'}`} title="Featured">★</button>
                   <button onClick={() => archive(r.id)}
-                    className="h-6 px-2 rounded text-[10px] transition-colors bg-[#151515] text-[#555] hover:text-red-400 hover:bg-red-500/10">Archive</button>
+                    className="h-7 px-2 rounded text-[10px] bg-[#151515] text-[#555] hover:text-red-400" title="Archive">🗑</button>
                 </div>
               </div>
             ))}
@@ -829,11 +893,17 @@ function AuditPage() {
 function SettingsPage() {
   const [settings, setSettings] = useState<Record<string, string>>({});
   const [saved, setSaved] = useState(false);
+  const [profile, setProfile] = useState({ username: '', email: '' });
+  const [passwords, setPasswords] = useState({ current: '', new: '', confirm: '' });
+  const [twoFA, setTwoFA] = useState({ setup: false, qr: '', secret: '', code: '', enabled: false });
+  const [msg, setMsg] = useState({ type: '', text: '' });
   const token = getStoredToken();
 
   useEffect(() => {
     fetch(`${API}/settings`, { headers: { Authorization: `Bearer ${token}` } })
       .then(r => r.json()).then(d => setSettings(d.data.settings || {}));
+    fetch(`${API}/auth/me`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json()).then(d => { setProfile({ username: d.data.user.username, email: d.data.user.email }); setTwoFA(t => ({ ...t, enabled: d.data.user.totp_enabled })); });
   }, []);
 
   const save = async () => {
@@ -847,6 +917,130 @@ function SettingsPage() {
   };
 
   const update = (key: string, value: string) => setSettings(s => ({ ...s, [key]: value }));
+
+  const updateProfile = async () => {
+    if (!passwords.current) { setMsg({ type: 'error', text: 'Password required' }); return; }
+    const res = await fetch(`${API}/auth/profile`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: profile.username, email: profile.email, current_password: passwords.current }),
+    });
+    const d = await res.json();
+    if (res.ok) { setMsg({ type: 'success', text: 'Profile updated' }); setPasswords(p => ({ ...p, current: '' })); }
+    else setMsg({ type: 'error', text: d.error });
+  };
+
+  const changePassword = async () => {
+    if (passwords.new !== passwords.confirm) { setMsg({ type: 'error', text: 'Passwords do not match' }); return; }
+    if (passwords.new.length < 6) { setMsg({ type: 'error', text: 'Password too short' }); return; }
+    const res = await fetch(`${API}/auth/change-password`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ current_password: passwords.current, new_password: passwords.new }),
+    });
+    const d = await res.json();
+    if (res.ok) { setMsg({ type: 'success', text: 'Password changed' }); setPasswords({ current: '', new: '', confirm: '' }); }
+    else setMsg({ type: 'error', text: d.error });
+  };
+
+  const setup2FA = async () => {
+    const res = await fetch(`${API}/auth/2fa/setup`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+    const d = await res.json();
+    if (d.data) { setTwoFA(t => ({ ...t, setup: true, qr: d.data.qr, secret: d.data.secret })); }
+  };
+
+  const enable2FA = async () => {
+    const res = await fetch(`${API}/auth/2fa/enable`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: twoFA.code }),
+    });
+    const d = await res.json();
+    if (res.ok) { setMsg({ type: 'success', text: '2FA enabled!' }); setTwoFA(t => ({ ...t, enabled: true, setup: false, code: '' })); fetch(`${API}/auth/me`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()).then(d => setTwoFA(t => ({ ...t, enabled: d.data.user.totp_enabled }))); }
+    else setMsg({ type: 'error', text: d.error });
+  };
+
+  const disable2FA = async () => {
+    if (!confirm('Disable 2FA?')) return;
+    const res = await fetch(`${API}/auth/2fa/disable`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: passwords.current }),
+    });
+    const d = await res.json();
+    if (res.ok) { setMsg({ type: 'success', text: '2FA disabled' }); setTwoFA(t => ({ ...t, enabled: false })); }
+    else setMsg({ type: 'error', text: d.error });
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-xl font-semibold text-white tracking-tight">Settings</h1>
+        <button onClick={save}
+          className={`h-8 px-4 rounded-lg text-[12px] font-medium transition-all ${
+            saved ? 'bg-emerald-500/10 text-emerald-400' : 'bg-[#1a1a1a] text-white hover:bg-[#222]'
+          }`}>
+          {saved ? '✓ Saved' : 'Save'}
+        </button>
+      </div>
+
+      {msg.text && <div className={`mb-4 p-3 rounded-lg text-[12px] ${msg.type === 'error' ? 'bg-red-500/10 text-red-400' : 'bg-emerald-500/10 text-emerald-400'}`}>{msg.text}</div>}
+
+      <div className="space-y-6 max-w-2xl">
+        {/* Profile */}
+        <div className="rounded-xl border border-[#1a1a1a] bg-[#0a0a0a] p-5">
+          <h3 className="text-[13px] font-medium text-white mb-4 flex items-center gap-2">
+            <span>👤</span> Profile
+          </h3>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div><label className="text-[11px] text-[#555] block mb-1">Username</label><input value={profile.username} onChange={e => setProfile(p => ({ ...p, username: e.target.value }))} className="w-full h-9 px-3 rounded-lg bg-[#111] border border-[#222] text-white text-[13px]" /></div>
+              <div><label className="text-[11px] text-[#555] block mb-1">Email</label><input value={profile.email} onChange={e => setProfile(p => ({ ...p, email: e.target.value }))} className="w-full h-9 px-3 rounded-lg bg-[#111] border border-[#222] text-white text-[13px]" /></div>
+            </div>
+            <div><label className="text-[11px] text-[#555] block mb-1">Current Password (required to change profile)</label><input type="password" value={passwords.current} onChange={e => setPasswords(p => ({ ...p, current: e.target.value }))} className="w-full h-9 px-3 rounded-lg bg-[#111] border border-[#222] text-white text-[13px]" /></div>
+            <button onClick={updateProfile} className="h-8 px-4 rounded-lg bg-[#7c3aed] text-white text-[12px] font-medium">Update Profile</button>
+          </div>
+        </div>
+
+        {/* Password */}
+        <div className="rounded-xl border border-[#1a1a1a] bg-[#0a0a0a] p-5">
+          <h3 className="text-[13px] font-medium text-white mb-4 flex items-center gap-2">
+            <span>🔒</span> Change Password
+          </h3>
+          <div className="space-y-4">
+            <div><label className="text-[11px] text-[#555] block mb-1">Current Password</label><input type="password" value={passwords.current} onChange={e => setPasswords(p => ({ ...p, current: e.target.value }))} className="w-full h-9 px-3 rounded-lg bg-[#111] border border-[#222] text-white text-[13px]" /></div>
+            <div className="grid grid-cols-2 gap-4">
+              <div><label className="text-[11px] text-[#555] block mb-1">New Password</label><input type="password" value={passwords.new} onChange={e => setPasswords(p => ({ ...p, new: e.target.value }))} className="w-full h-9 px-3 rounded-lg bg-[#111] border border-[#222] text-white text-[13px]" /></div>
+              <div><label className="text-[11px] text-[#555] block mb-1">Confirm</label><input type="password" value={passwords.confirm} onChange={e => setPasswords(p => ({ ...p, confirm: e.target.value }))} className="w-full h-9 px-3 rounded-lg bg-[#111] border border-[#222] text-white text-[13px]" /></div>
+            </div>
+            <button onClick={changePassword} className="h-8 px-4 rounded-lg bg-[#7c3aed] text-white text-[12px] font-medium">Change Password</button>
+          </div>
+        </div>
+
+        {/* 2FA */}
+        <div className="rounded-xl border border-[#1a1a1a] bg-[#0a0a0a] p-5">
+          <h3 className="text-[13px] font-medium text-white mb-4 flex items-center gap-2">
+            <span>🛡️</span> Two-Factor Authentication
+          </h3>
+          {twoFA.enabled ? (
+            <div className="flex items-center justify-between">
+              <span className="text-[13px] text-emerald-400">2FA is enabled</span>
+              <button onClick={disable2FA} className="h-8 px-4 rounded-lg border border-red-500/30 text-red-400 text-[12px]">Disable</button>
+            </div>
+          ) : twoFA.setup ? (
+            <div className="space-y-4">
+              <img src={twoFA.qr} alt="QR Code" className="w-40 h-40 rounded-lg" />
+              <p className="text-[11px] text-[#666]">Secret: <code className="text-[#a78bfa]">{twoFA.secret}</code></p>
+              <div><label className="text-[11px] text-[#555] block mb-1">Enter code from authenticator app</label><input value={twoFA.code} onChange={e => setTwoFA(t => ({ ...t, code: e.target.value }))} className="w-full h-9 px-3 rounded-lg bg-[#111] border border-[#222] text-white text-[13px]" /></div>
+              <div className="flex gap-2">
+                <button onClick={enable2FA} className="h-8 px-4 rounded-lg bg-emerald-500 text-white text-[12px] font-medium">Enable 2FA</button>
+                <button onClick={() => setTwoFA(t => ({ ...t, setup: false }))} className="h-8 px-4 rounded-lg border border-[#222] text-[#666] text-[12px]">Cancel</button>
+              </div>
+            </div>
+          ) : (
+            <button onClick={setup2FA} className="h-8 px-4 rounded-lg bg-[#7c3aed] text-white text-[12px] font-medium">Setup 2FA</button>
+          )}
+        </div>
 
   return (
     <div>
