@@ -484,6 +484,19 @@ router.post('/fetch-readmes', requireAuth('super_admin'), async (req: Request, r
   }
 });
 
+// ── Verify & Enrich Agents ──
+router.post('/verify-agents', requireAuth('super_admin'), async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    const { verifyAndEnrich } = require('../db/verify-agents');
+    const { updated } = await verifyAndEnrich();
+    auditLog(user.id, 'verify_agents', 'admin', null, { updated }, req.ip || '');
+    res.json({ data: { message: `Verified and enriched ${updated} agents` } });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Seed DB ──
 router.post('/seed', requireAuth('super_admin'), async (req: Request, res: Response) => {
   try {
