@@ -10,6 +10,15 @@ interface AgentCardProps {
 
 export function AgentCard({ agent, featured = false }: AgentCardProps) {
   const isVerified = agent.verification_score >= 0.75;
+  const isDangerous = agent.security_verdict === 'dangerous';
+  const trustLevel = agent.trust_level || 'community';
+
+  const trustBadge = {
+    official: { label: 'Official', color: 'text-purple-400 bg-purple-400/[0.08]', icon: '✓' },
+    trusted: { label: 'Trusted', color: 'text-blue-400 bg-blue-400/[0.08]', icon: '✓' },
+    community: { label: 'Community', color: 'text-amber-400 bg-amber-400/[0.08]', icon: '' },
+  };
+  const trust = trustBadge[trustLevel as keyof typeof trustBadge] || trustBadge.community;
 
   // Resource type badge config
   const resourceConfig: Record<string, { label: string; emoji: string; color: string }> = {
@@ -78,9 +87,17 @@ export function AgentCard({ agent, featured = false }: AgentCardProps) {
           <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium ${rt.color}`}>
             {rt.label}
           </span>
-          {isVerified ? (
-            <span className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium text-emerald-400 bg-emerald-400/[0.08]">
-              Verified
+          {isDangerous ? (
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium text-red-400 bg-red-400/[0.08] border border-red-400/20">
+              ⚠️ Unsafe
+            </span>
+          ) : trustLevel === 'official' || trustLevel === 'trusted' ? (
+            <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium ${trust.color} border border-current/20`}>
+              ✓ {trust.label}
+            </span>
+          ) : isVerified ? (
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium text-emerald-400 bg-emerald-400/[0.08]">
+              ✓ Verified
             </span>
           ) : agent.verification_score >= 0.5 ? (
             <span className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium text-amber-400 bg-amber-400/[0.08]">

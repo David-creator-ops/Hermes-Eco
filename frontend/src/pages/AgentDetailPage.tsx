@@ -24,6 +24,16 @@ export function AgentDetailPage() {
   const passed = Object.values(checks).filter(Boolean).length;
   const isVerified = a.verification_score >= 0.75;
   const isFeatured = a.is_featured === 1;
+  const securityVerdict = a.security_verdict || 'pending';
+  const securityFindings = a.security_scan || [];
+  const trustLevel = a.trust_level || 'community';
+
+  const trustInfo = {
+    official: { label: 'Official', desc: 'Verified by Hermes team', color: 'text-purple-400 border-purple-400/20 bg-purple-400/5' },
+    trusted: { label: 'Trusted', desc: 'Passed security scan', color: 'text-blue-400 border-blue-400/20 bg-blue-400/5' },
+    community: { label: 'Community', desc: 'Not yet scanned', color: 'text-amber-400 border-amber-400/20 bg-amber-400/5' },
+  };
+  const trust = trustInfo[trustLevel as keyof typeof trustInfo] || trustInfo.community;
 
   const authorPart = a.author_github ? `${a.author_github}/` : '';
   
@@ -178,6 +188,47 @@ export function AgentDetailPage() {
                   );
                 })}
               </div>
+            </section>
+
+            {/* Security Scan */}
+            <section className={`p-4 rounded-xl border ${trust.color}`}>
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-[13px] font-semibold text-white">Security Scan</h2>
+                <span className={`text-[10px] font-medium px-2 py-1 rounded ${
+                  securityVerdict === 'safe' ? 'text-emerald-400 bg-emerald-400/10' :
+                  securityVerdict === 'caution' ? 'text-amber-400 bg-amber-400/10' :
+                  securityVerdict === 'dangerous' ? 'text-red-400 bg-red-400/10' :
+                  'text-[#555] bg-[#151515]'
+                }`}>
+                  {securityVerdict === 'pending' ? 'Not Scanned' : securityVerdict.toUpperCase()}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-2xl">{
+                  trustLevel === 'official' ? '✓' : trustLevel === 'trusted' ? '✓' : securityVerdict === 'safe' ? '✓' : securityVerdict === 'dangerous' ? '⚠️' : '?'
+                }</span>
+                <div>
+                  <span className="text-[12px] font-medium text-white">{trust.label}</span>
+                  <span className="text-[10px] text-[#555] block">{trust.desc}</span>
+                </div>
+              </div>
+              {securityFindings.length > 0 && (
+                <div className="mt-2 pt-3 border-t border-[#1a1a1a]">
+                  <p className="text-[11px] text-[#555] mb-2">{securityFindings.length} security finding(s) detected:</p>
+                  <div className="max-h-32 overflow-y-auto space-y-1">
+                    {securityFindings.slice(0, 5).map((f: any, i: number) => (
+                      <div key={i} className="text-[10px] text-[#666] flex items-start gap-2">
+                        <span className={`flex-shrink-0 w-1.5 h-1.5 mt-1 rounded-full ${
+                          f.severity === 'critical' ? 'bg-red-500' :
+                          f.severity === 'high' ? 'bg-orange-500' :
+                          f.severity === 'medium' ? 'bg-amber-500' : 'bg-gray-500'
+                        }`} />
+                        <span className="truncate">{f.category}: {f.description}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </section>
           </div>
 

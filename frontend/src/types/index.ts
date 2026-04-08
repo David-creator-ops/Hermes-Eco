@@ -27,6 +27,9 @@ export interface Agent {
   verification_score: number;
   verification_checks: Record<string, boolean>;
   verified_at: string | null;
+  security_scan: any[];
+  security_verdict: string;
+  trust_level: string;
   stars: number;
   forks: number;
   watchers: number;

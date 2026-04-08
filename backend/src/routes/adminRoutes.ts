@@ -667,6 +667,19 @@ router.post('/verify-agents', requireAuth('super_admin'), async (req: Request, r
   }
 });
 
+// ── Security Scan ──
+router.post('/security-scan', requireAuth('super_admin'), async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    const { runSecurityVerification } = require('../db/security-scan');
+    const { updated, dangers } = await runSecurityVerification();
+    auditLog(user.id, 'security_scan', 'admin', null, { scanned: updated, dangers }, req.ip || '');
+    res.json({ data: { message: `Security scan complete: ${updated} scanned, ${dangers} dangerous` } });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Seed DB ──
 router.post('/seed', requireAuth('super_admin'), async (req: Request, res: Response) => {
   try {
