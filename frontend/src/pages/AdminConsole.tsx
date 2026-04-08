@@ -480,6 +480,29 @@ function ResourcesPage() {
         </div>
       </div>
 
+      {/* Bulk Actions */}
+      <div className="mb-6 p-4 rounded-xl border border-[#1a1a1a] bg-[#0a0a0a]">
+        <h3 className="text-[12px] font-medium text-[#888] mb-3">Data Enrichment</h3>
+        <div className="flex flex-wrap gap-2">
+          <BulkActionButton
+            onClick={async () => {
+              await fetch(`${API}/fetch-readmes`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+              fetchItems();
+            }}
+            label="Fetch READMEs"
+            description="Pull READMEs from GitHub & generate summaries"
+          />
+          <BulkActionButton
+            onClick={async () => {
+              await fetch(`${API}/verify-agents`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+              fetchItems();
+            }}
+            label="Verify & Enrich"
+            description="Fetch live GitHub stats + verify repositories"
+          />
+        </div>
+      </div>
+
       {items.length === 0 ? (
         <div className="py-20 text-center text-[#444] text-sm">No resources</div>
       ) : (
@@ -988,5 +1011,26 @@ function LoadingSkeleton() {
       </div>
       <div className="h-32 rounded-xl border border-[#1a1a1a] bg-[#0a0a0a]" />
     </div>
+  );
+}
+
+function BulkActionButton({ onClick, label, description }: { onClick: () => void; label: string; description: string }) {
+  const [running, setRunning] = useState(false);
+  const handle = async () => {
+    setRunning(true);
+    await onClick();
+    setRunning(false);
+  };
+  return (
+    <button onClick={handle} disabled={running}
+      className="group flex items-start gap-3 h-auto p-3 rounded-lg border border-[#1a1a1a] bg-[#0d0d0d] hover:border-[#7c3aed]/30 hover:bg-[#7c3aed]/5 transition-all disabled:opacity-50">
+      <div className="w-8 h-8 rounded-md bg-[#111] border border-[#222] flex items-center justify-center text-[#7c3aed] group-hover:border-[#7c3aed]/40 transition-colors">
+        ⚡
+      </div>
+      <div className="text-left">
+        <div className="text-[12px] font-medium text-white">{label}</div>
+        <div className="text-[10px] text-[#666]">{description}</div>
+      </div>
+    </button>
   );
 }
