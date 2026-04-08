@@ -199,10 +199,17 @@ router.get('/resources', requireAuth(), async (req: Request, res: Response) => {
 
     const count = await db.prepare(`SELECT COUNT(*) as total FROM agents ${where}`).get(...params) as { total: number };
     const resources = await db.prepare(
-      `SELECT id, name, slug, resource_type, verification_status, verification_score, stars, author_github, created_at, is_featured, is_archived FROM agents ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`
+      `SELECT id, name, slug, resource_type, verification_status, verification_score, verification_checks, stars, author_github, created_at, is_featured, is_archived, security_verdict, trust_level, security_scan FROM agents ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`
     ).all(...params, limit, offset) as any[];
 
-    res.json({ data: resources, total: count.total, page, limit });
+    // Parse JSON fields
+    const parsed = resources.map((r: any) => {
+      try { r.verification_checks = JSON.parse(r.verification_checks || '{}'); } catch { r.verification_checks = {}; }
+      try { r.security_scan = JSON.parse(r.security_scan || '[]'); } catch { r.security_scan = []; }
+      return r;
+    });
+
+    res.json({ data: parsed, total: count.total, page, limit });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
