@@ -257,6 +257,7 @@ async function main() {
         const agentEntry = {
           name: md.name || repoData.name,
           slug: getSlug(md.name || repoData.name),
+          resource_type: md.resource_type || md.type || 'agent',
           type: md.type || 'agent',
           description: md.description || repoData.description || '',
           long_description: md.long_description,

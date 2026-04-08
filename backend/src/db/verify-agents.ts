@@ -1,18 +1,5 @@
 import db from './pool';
 
-// Verifies seed agents by fetching real GitHub data
-// Updates: long_description (from README), verification checks, real repo stats
-async function fetchWithTimeout(url: string, timeout = 8000) {
-  const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), timeout);
-  try {
-    const resp = await fetch(url, { signal: controller.signal });
-    return resp;
-  } finally {
-    clearTimeout(id);
-  }
-}
-
 function summarizeReadme(text: string, maxLen = 600): string {
   // Remove badges, images, HTML tags, nav links
   const clean = text
@@ -68,7 +55,7 @@ export async function verifyAndEnrich(): Promise<{ updated: number }> {
   const headers: Record<string, string> = { Accept: 'application/vnd.github+json' };
   if (ghToken) headers.Authorization = `token ${ghToken}`;
 
-  const agents = await (db as any).prepare(
+  const agents = await db.prepare(
     "SELECT id, name, repository_url, long_description, verification_score FROM agents WHERE is_archived = 0 AND repository_url IS NOT NULL"
   ).all() as any[];
 
@@ -84,22 +71,26 @@ export async function verifyAndEnrich(): Promise<{ updated: number }> {
     const [, owner, repo] = match;
     console.log(`→ ${agent.name} (${owner}/${repo})`);
 
-    // Fetch repo metadata
     let repoMeta: any = null;
     try {
-      const r = await fetchWithTimeout(`https://api.github.com/repos/${owner}/${repo}`, { headers } as RequestInit);
-      if (r.ok) repoMeta = await r.json();
+      const resp = await fetch(`https://api.github.com/repos/${owner}/${repo}`, {
+        headers,
+        signal: AbortSignal.timeout(8000),
+      } as RequestInit);
+      if (resp.ok) repoMeta = await resp.json();
     } catch (e: any) {
       console.error(`  API error: ${e.message}`);
     }
 
-    // Fetch README
     let readme: string | null = null;
     for (const [branch, name] of [['master', 'README.md'], ['main', 'README.md'], ['master', 'README'], ['main', 'README']]) {
       try {
-        const r = await fetchWithTimeout(`https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${name}`);
-        if (r.ok) {
-          readme = await r.text();
+        const resp = await fetch(`https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${name}`, {
+          headers: ghToken ? { Authorization: `token ${ghToken}` } : {},
+          signal: AbortSignal.timeout(8000),
+        } as RequestInit);
+        if (resp.ok) {
+          readme = await resp.text();
           break;
         }
       } catch { /* try next */ }
@@ -110,7 +101,6 @@ export async function verifyAndEnrich(): Promise<{ updated: number }> {
       continue;
     }
 
-    // Generate verification
     const readmeLower = (readme || '').toLowerCase();
     const checks: Record<string, boolean> = {
       has_repository: !!repoMeta,
@@ -125,15 +115,13 @@ export async function verifyAndEnrich(): Promise<{ updated: number }> {
     const passed = Object.values(checks).filter(Boolean).length;
     const score = parseFloat((passed / 8).toFixed(2));
 
-    // Generate long_description from README summary
     let longDesc: string | null = null;
     if (readme && readme.length > 200) {
       longDesc = summarizeReadme(readme, 800);
     }
 
-    // Update
-    await (db as any).prepare(
-      "UPDATE agents SET verification_score = $1, verification_checks = $2, stars = $3, forks = $4, watchers = $5, long_description = COALESCE(NULLIF($6, ''), long_description), updated_at = CURRENT_TIMESTAMP WHERE id = $7"
+    await db.prepare(
+      "UPDATE agents SET verification_score = ?, verification_checks = ?, stars = ?, forks = ?, watchers = ?, long_description = COALESCE(NULLIF(?, ''), long_description), updated_at = CURRENT_TIMESTAMP WHERE id = ?"
     ).run(
       score,
       JSON.stringify(checks),
@@ -148,7 +136,6 @@ export async function verifyAndEnrich(): Promise<{ updated: number }> {
     if (longDesc) console.log(`  ✓ description: ${longDesc.length} chars from README`);
     updated++;
 
-    // Be nice to GitHub API
     await new Promise(r => setTimeout(r, 1000));
   }
 

@@ -7,15 +7,15 @@ import { AgentCard } from '../components/agent/AgentCard';
 import { SearchInput } from '../components/search/SearchBar';
 
 const RESOURCE_TYPES = [
-  { label: 'All', value: '', icon: '📦' },
-  { label: 'Agents', value: 'agent', icon: '🤖' },
-  { label: 'Skills', value: 'skill', icon: '🛠️' },
-  { label: 'Tools', value: 'tool', icon: '🔧' },
-  { label: 'Integrations', value: 'integration', icon: '🔌' },
-  { label: 'Workflows', value: 'workflow', icon: '⚙️' },
-  { label: 'Memory', value: 'memory-system', icon: '🧠' },
-  { label: 'Model Configs', value: 'model-config', icon: '🎯' },
-  { label: 'Routers', value: 'router', icon: '🔄' },
+  { label: 'All', value: '', icon: '📦', desc: 'All resources' },
+  { label: 'Agents', value: 'agent', icon: '🤖', desc: 'Autonomous AI that reasons & acts' },
+  { label: 'Skills', value: 'skill', icon: '🛠️', desc: 'Learned procedures that improve with use' },
+  { label: 'Tools', value: 'tool', icon: '🔧', desc: 'Capabilities agents can call' },
+  { label: 'Integrations', value: 'integration', icon: '🔌', desc: 'Connect to external services' },
+  { label: 'Workflows', value: 'workflow', icon: '⚙️', desc: 'Multi-step automation chains' },
+  { label: 'Memory', value: 'memory-system', icon: '🧠', desc: 'Persistent knowledge & context' },
+  { label: 'Model Configs', value: 'model-config', icon: '🎯', desc: 'Prompts, personalities & routing' },
+  { label: 'Routers', value: 'router', icon: '🔄', desc: 'Orchestrate across agents' },
 ];
 
 const TIER2_CATS = [
@@ -109,7 +109,7 @@ export function BrowsePage() {
       </div>
 
       {/* Resource type tabs */}
-      <div className="flex items-center gap-1.5 mb-6 overflow-x-auto pb-2 scrollbar-hide">
+      <div className="flex items-center gap-1.5 mb-2 overflow-x-auto pb-1 scrollbar-hide">
         {RESOURCE_TYPES.map(r => (
           <button key={r.value} onClick={() => set('resource_type', r.value)}
             className={`flex items-center gap-1.5 h-8 px-3 rounded-lg text-[12px] font-medium whitespace-nowrap transition-all ${
@@ -120,6 +120,9 @@ export function BrowsePage() {
           </button>
         ))}
       </div>
+      {rt && RESOURCE_TYPES.find(r => r.value === rt)?.desc && (
+        <p className="text-[11px] text-[#555] mb-5">{RESOURCE_TYPES.find(r => r.value === rt)?.desc}</p>
+      )}
 
       {/* Mobile filter toggle */}
       {openMobile && (

@@ -123,8 +123,7 @@ export async function fetchAndSummarize(): Promise<ReadmeResult> {
 
   const githubToken = process.env.GH_PAT || process.env.GITHUB_TOKEN || '';
 
-  // Get all agents without long_description
-  const agents = await (db as any).prepare(
+  const agents = await db.prepare(
     "SELECT id, name, slug, repository_url FROM agents WHERE (long_description IS NULL OR long_description = '') AND is_archived = 0 AND repository_url LIKE '%github%'"
   ).all() as any[];
 
@@ -148,8 +147,8 @@ export async function fetchAndSummarize(): Promise<ReadmeResult> {
 
     if (readme && readme.length > 100) {
       const summary = summarizeReadme(readme);
-      await (db as any).prepare(
-        "UPDATE agents SET long_description = $1 WHERE id = $2"
+      await db.prepare(
+        "UPDATE agents SET long_description = ? WHERE id = ?"
       ).run(summary, agent.id);
       console.log(`  ✓ Summarized (${summary.length} chars)`);
       updated++;

@@ -296,7 +296,7 @@ router.post('/crawler/run', requireAuth(), async (req: Request, res: Response) =
   try {
     const user = (req as any).user;
     const runId = await db.prepare(
-      "INSERT INTO crawler_runs (trigger, status) VALUES ($1, 'running') RETURNING id"
+      "INSERT INTO crawler_runs (trigger, status) VALUES (?, 'running') RETURNING id"
     ).get(user.username);
 
     // Run async in background
@@ -309,7 +309,7 @@ router.post('/crawler/run', requireAuth(), async (req: Request, res: Response) =
 
         if (!githubToken || githubToken.length < 30) {
           await db.prepare(
-            "UPDATE crawler_runs SET status = 'failed', details = $1, finished_at = CURRENT_TIMESTAMP WHERE id = $2"
+            "UPDATE crawler_runs SET status = 'failed', details = ?, finished_at = CURRENT_TIMESTAMP WHERE id = ?"
           ).run(JSON.stringify({ error: 'GH_PAT env var required for code search. Add GH_PAT to Railway env vars.' }), Number(runId.id));
           return;
         }
@@ -331,7 +331,7 @@ router.post('/crawler/run', requireAuth(), async (req: Request, res: Response) =
           allItems = resp.data.items || [];
         } catch (e: any) {
           await db.prepare(
-            "UPDATE crawler_runs SET status = 'failed', details = $1, finished_at = CURRENT_TIMESTAMP WHERE id = $2"
+            "UPDATE crawler_runs SET status = 'failed', details = ?, finished_at = CURRENT_TIMESTAMP WHERE id = ?"
           ).run(JSON.stringify({ error: `GitHub code search failed: ${e.response?.status} ${e.response?.data?.message || e.message}` }), Number(runId.id));
           return;
         }
@@ -351,7 +351,7 @@ router.post('/crawler/run', requireAuth(), async (req: Request, res: Response) =
 
         for (const repo of uniqueRepos) {
           try {
-            const existing = await db.prepare('SELECT id FROM agents WHERE repository_url = $1').get(repo.html_url) as any;
+            const existing = await db.prepare('SELECT id FROM agents WHERE repository_url = ?').get(repo.html_url) as any;
             if (existing) continue; // already have this
 
             // Fetch the .hermes-eco.json content
@@ -383,7 +383,7 @@ router.post('/crawler/run', requireAuth(), async (req: Request, res: Response) =
                 tier1_category, tier2_categories, complexity_level, deployment_type,
                 required_skills, tags, tools_used, verification_score,
                 verification_status, verification_checks, stars, forks, watchers, is_featured, created_at, updated_at
-              ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, '[]', '[]', 0.5, 'verified', '{}', $16, $17, $18, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', '[]', 0.5, 'verified', '{}', ?, ?, ?, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             `).run(
               json.name || repo.name, slug,
               json.type, json.type,
@@ -403,11 +403,11 @@ router.post('/crawler/run', requireAuth(), async (req: Request, res: Response) =
         }
 
         await db.prepare(
-          "UPDATE crawler_runs SET status = 'completed', resources_found = $1, resources_processed = $2, resources_failed = $3, finished_at = CURRENT_TIMESTAMP WHERE id = $4"
+          "UPDATE crawler_runs SET status = 'completed', resources_found = ?, resources_processed = ?, resources_failed = ?, finished_at = CURRENT_TIMESTAMP WHERE id = ?"
         ).run(uniqueRepos.length, processed, failed, Number(runId.id));
       } catch (err: any) {
         await db.prepare(
-          "UPDATE crawler_runs SET status = 'failed', details = $1, finished_at = CURRENT_TIMESTAMP WHERE id = $2"
+          "UPDATE crawler_runs SET status = 'failed', details = ?, finished_at = CURRENT_TIMESTAMP WHERE id = ?"
         ).run(JSON.stringify({ error: err.message }), Number(runId.id));
         console.error('Crawler run failed:', err.message);
       }

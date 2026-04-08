@@ -6,14 +6,14 @@ import { AgentCard } from '../components/agent/AgentCard';
 import { SearchBar } from '../components/search/SearchBar';
 
 const RESOURCE_TYPES = [
-  { name: 'Agents', slug: 'agent', icon: '🤖', description: 'Autonomous AI systems', count: 0, color: 'from-purple-500/20 to-purple-600/5' },
-  { name: 'Skills', slug: 'skill', icon: '🛠️', description: 'Reusable procedures', count: 0, color: 'from-blue-500/20 to-blue-600/5' },
-  { name: 'Tools', slug: 'tool', icon: '🔧', description: 'Utilities and functions', count: 0, color: 'from-emerald-500/20 to-emerald-600/5' },
-  { name: 'Integrations', slug: 'integration', icon: '🔌', description: 'External service connections', count: 0, color: 'from-amber-500/20 to-amber-600/5' },
-  { name: 'Workflows', slug: 'workflow', icon: '⚙️', description: 'Automation recipes', count: 0, color: 'from-rose-500/20 to-rose-600/5' },
-  { name: 'Memory Systems', slug: 'memory-system', icon: '🧠', description: 'Knowledge bases', count: 0, color: 'from-indigo-500/20 to-indigo-600/5' },
-  { name: 'Model Configs', slug: 'model-config', icon: '🎯', description: 'Prompt templates', count: 0, color: 'from-cyan-500/20 to-cyan-600/5' },
-  { name: 'Routers', slug: 'router', icon: '🔄', description: 'Orchestration systems', count: 0, color: 'from-orange-500/20 to-orange-600/5' },
+  { name: 'Agents', slug: 'agent', icon: '🤖', description: 'Autonomous AI systems that reason, use tools, and complete tasks on their own', count: 0, color: 'from-purple-500/20 to-purple-600/5' },
+  { name: 'Skills', slug: 'skill', icon: '🛠️', description: 'Reusable procedures agents learn and improve — like muscle memory for AI', count: 0, color: 'from-blue-500/20 to-blue-600/5' },
+  { name: 'Tools', slug: 'tool', icon: '🔧', description: 'Individual capabilities agents can call — search, code exec, file ops, and more', count: 0, color: 'from-emerald-500/20 to-emerald-600/5' },
+  { name: 'Integrations', slug: 'integration', icon: '🔌', description: 'Connect Hermes to external services — APIs, databases, messaging platforms', count: 0, color: 'from-amber-500/20 to-amber-600/5' },
+  { name: 'Workflows', slug: 'workflow', icon: '⚙️', description: 'Multi-step automation recipes — chain agents, tools, and decisions together', count: 0, color: 'from-rose-500/20 to-rose-600/5' },
+  { name: 'Memory Systems', slug: 'memory-system', icon: '🧠', description: 'Persistent knowledge stores — vector DBs, embeddings, and context recall', count: 0, color: 'from-indigo-500/20 to-indigo-600/5' },
+  { name: 'Model Configs', slug: 'model-config', icon: '🎯', description: 'Prompt templates, personality files, and model routing strategies', count: 0, color: 'from-cyan-500/20 to-cyan-600/5' },
+  { name: 'Routers', slug: 'router', icon: '🔄', description: 'Orchestration layers that route queries across agents and data sources', count: 0, color: 'from-orange-500/20 to-orange-600/5' },
 ];
 
 const USE_CATEGORIES = [
@@ -145,7 +145,8 @@ export function HomePage() {
                   <span className="text-[13px] font-medium text-white/90 group-hover:text-white transition-colors">
                     {rt.name}
                   </span>
-                  <span className="block text-[11px] text-[#555] mt-0.5">{count} resources</span>
+                  <span className="block text-[10px] text-[#666] mt-0.5 leading-snug">{rt.description}</span>
+                  <span className="block text-[11px] text-[#555] mt-1">{count} resources</span>
                 </div>
               </Link>
             );

@@ -25,15 +25,15 @@ export function AgentDetailPage() {
   const isVerified = a.verification_score >= 0.75;
   const isFeatured = a.is_featured === 1;
 
-  const resourceConfig: Record<string, { label: string; emoji: string; bg: string; installCmd: string; installPrefix: string; icon: typeof Terminal }> = {
-    agent: { label: 'Agent', emoji: '🤖', bg: 'bg-purple-500/10 text-purple-400 border-purple-500/20', installCmd: `hermes install agent:${a.author_github}/${a.slug}`, installPrefix: 'hermes install agent:', icon: Terminal },
-    skill: { label: 'Skill', emoji: '🛠️', bg: 'bg-blue-500/10 text-blue-400 border-blue-500/20', installCmd: `hermes install skill:${a.author_github}/${a.slug}`, installPrefix: 'hermes install skill:', icon: Code2 },
-    tool: { label: 'Tool', emoji: '🔧', bg: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20', installCmd: `hermes install tool:${a.author_github}/${a.slug}`, installPrefix: 'hermes install tool:', icon: Zap },
-    integration: { label: 'Integration', emoji: '🔌', bg: 'bg-amber-500/10 text-amber-400 border-amber-500/20', installCmd: `hermes install integration:${a.author_github}/${a.slug}`, installPrefix: 'hermes install integration:', icon: Plug },
-    workflow: { label: 'Workflow', emoji: '⚙️', bg: 'bg-rose-500/10 text-rose-400 border-rose-500/20', installCmd: `hermes install workflow:${a.author_github}/${a.slug}`, installPrefix: 'hermes install workflow:', icon: GitMerge },
-    memory: { label: 'Memory', emoji: '🧠', bg: 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20', installCmd: `hermes install memory:${a.author_github}/${a.slug}`, installPrefix: 'hermes install memory:', icon: Brain },
-    'model-config': { label: 'Model Config', emoji: '🎯', bg: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20', installCmd: `hermes install model:${a.author_github}/${a.slug}`, installPrefix: 'hermes install model:', icon: Settings },
-    router: { label: 'Router', emoji: '🔄', bg: 'bg-orange-500/10 text-orange-400 border-orange-500/20', installCmd: `hermes install router:${a.author_github}/${a.slug}`, installPrefix: 'hermes install router:', icon: Box },
+  const resourceConfig: Record<string, { label: string; emoji: string; bg: string; installCmd: string; installPrefix: string; icon: typeof Terminal; whatItDoes: string }> = {
+    agent: { label: 'Agent', emoji: '🤖', bg: 'bg-purple-500/10 text-purple-400 border-purple-500/20', installCmd: `hermes install agent:${a.author_github}/${a.slug}`, installPrefix: 'hermes install agent:', icon: Terminal, whatItDoes: 'An autonomous AI system that reasons, uses tools, and completes tasks on its own. Agents can loop, plan, delegate, and self-correct — they are the core building block of the Hermes ecosystem.' },
+    skill: { label: 'Skill', emoji: '🛠️', bg: 'bg-blue-500/10 text-blue-400 border-blue-500/20', installCmd: `hermes install skill:${a.author_github}/${a.slug}`, installPrefix: 'hermes install skill:', icon: Code2, whatItDoes: 'A reusable procedure your agent learns and improves over time. Skills are like muscle memory for AI — once installed, the agent knows how to perform a specific task and gets better with practice.' },
+    tool: { label: 'Tool', emoji: '🔧', bg: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20', installCmd: `hermes install tool:${a.author_github}/${a.slug}`, installPrefix: 'hermes install tool:', icon: Zap, whatItDoes: 'An individual capability an agent can call during a task. Tools include web search, code execution, file operations, browser control, and more — they extend what your agent can do.' },
+    integration: { label: 'Integration', emoji: '🔌', bg: 'bg-amber-500/10 text-amber-400 border-amber-500/20', installCmd: `hermes install integration:${a.author_github}/${a.slug}`, installPrefix: 'hermes install integration:', icon: Plug, whatItDoes: 'A connector to an external service or platform. Integrations let your agent talk to APIs, databases, messaging platforms, and other services through a standard interface.' },
+    workflow: { label: 'Workflow', emoji: '⚙️', bg: 'bg-rose-500/10 text-rose-400 border-rose-500/20', installCmd: `hermes install workflow:${a.author_github}/${a.slug}`, installPrefix: 'hermes install workflow:', icon: GitMerge, whatItDoes: 'A multi-step automation recipe that chains agents, tools, and decisions together. Workflows define how tasks flow — with branching, looping, and conditional logic for complex operations.' },
+    'memory-system': { label: 'Memory', emoji: '🧠', bg: 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20', installCmd: `hermes install memory:${a.author_github}/${a.slug}`, installPrefix: 'hermes install memory:', icon: Brain, whatItDoes: 'A persistent knowledge store for your agent. Memory systems use vector embeddings and semantic search so agents can recall facts, context, and past conversations across sessions.' },
+    'model-config': { label: 'Model Config', emoji: '🎯', bg: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20', installCmd: `hermes install model:${a.author_github}/${a.slug}`, installPrefix: 'hermes install model:', icon: Settings, whatItDoes: 'A prompt template, personality definition, or model routing strategy. Model configs shape how your agent thinks and responds — from tone and style to which LLM handles which task.' },
+    router: { label: 'Router', emoji: '🔄', bg: 'bg-orange-500/10 text-orange-400 border-orange-500/20', installCmd: `hermes install router:${a.author_github}/${a.slug}`, installPrefix: 'hermes install router:', icon: Box, whatItDoes: 'An orchestration layer that routes queries across agents and data sources. Routers decide which agent handles a task, which data source to query, and how to combine results.' },
   };
 
   const rt = resourceConfig[a.resource_type] || resourceConfig.agent;
@@ -124,6 +124,15 @@ export function AgentDetailPage() {
                 <div className="text-[13px] text-[#707070] leading-relaxed whitespace-pre-wrap">{a.long_description}</div>
               </section>
             )}
+
+            {/* What this type does */}
+            <section className="p-3.5 rounded-lg bg-[#0d0d0d] border border-[#1a1a1a]">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-sm">{rt.emoji}</span>
+                <span className="text-[13px] font-semibold text-white">What is a {rt.label}?</span>
+              </div>
+              <p className="text-[12px] text-[#707070] leading-relaxed">{rt.whatItDoes}</p>
+            </section>
 
             {/* Type-specific install & usage */}
             <section>
