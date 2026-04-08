@@ -90,6 +90,7 @@ export function AdminShell({ user, token, onLogout }: { user: any; token: string
     { label: 'Analyze', path: '/console/analyze', icon: '⚡', roles: ['super_admin', 'moderator'] },
     { label: 'Submissions', path: '/console/submissions', icon: '◈', roles: ['super_admin', 'moderator'] },
     { label: 'Resources', path: '/console/resources', icon: '◆', roles: ['super_admin', 'moderator'] },
+    { label: 'Categories', path: '/console/categories', icon: '🏷', roles: ['super_admin', 'moderator'] },
     { label: 'Featured', path: '/console/featured', icon: '★', roles: ['super_admin', 'moderator'] },
     { label: 'Crawler', path: '/console/crawler', icon: '◎', roles: ['super_admin', 'moderator', 'analyst'] },
     { label: 'Settings', path: '/console/settings', icon: '⚙', roles: ['super_admin'] },
@@ -160,6 +161,7 @@ export function AdminShell({ user, token, onLogout }: { user: any; token: string
             <Route path="analyze" element={<AnalyzePage />} />
             <Route path="submissions" element={<SubmissionsPage />} />
             <Route path="resources" element={<ResourcesPage />} />
+            <Route path="categories" element={<CategoriesPage />} />
             <Route path="crawler" element={<CrawlerPage />} />
             <Route path="users" element={<UsersPage />} />
             <Route path="audit" element={<AuditPage />} />
@@ -472,6 +474,17 @@ function ResourcesPage() {
     fetchItems();
   };
 
+  const scanOne = async (id: number) => {
+    const res = await fetch(`${API}/resources/${id}/security-scan`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+    const d = await res.json();
+    if (d.data?.verdict === 'dangerous') {
+      alert(`⚠️ DANGER: ${d.data.findings?.length || 0} security findings!\n\n` + (d.data.findings?.slice(0,3).map((f: any) => `${f.severity}: ${f.description}`).join('\n') || ''));
+    } else {
+      alert(`✓ Scan complete: ${d.data?.verdict?.toUpperCase() || 'safe'}`);
+    }
+    fetchItems();
+  };
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
@@ -525,6 +538,8 @@ function ResourcesPage() {
                     r.verification_status === 'unverified' ? 'bg-amber-500/10 text-amber-400' :
                     'bg-red-500/10 text-red-400'
                   }`}>{r.verification_status}</span>
+                  <button onClick={() => scanOne(r.id)}
+                    className="h-6 px-2 rounded text-[10px] transition-colors bg-[#151515] text-[#555] hover:text-[#7c3aed] hover:bg-[#7c3aed]/10" title="Run security scan">🔒</button>
                   <button onClick={() => toggleFeatured(r.id)}
                     className={`h-6 px-2 rounded text-[10px] transition-colors ${
                       r.is_featured ? 'bg-amber-500/10 text-amber-400' : 'bg-[#151515] text-[#555] hover:text-white'
@@ -1242,5 +1257,94 @@ function BulkActionButton({ onClick, label, description }: { onClick: () => void
         <div className="text-[10px] text-[#666]">{description}</div>
       </div>
     </button>
+  );
+}
+
+// ── Categories Page ──
+function CategoriesPage() {
+  const [categories, setCategories] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState<any>(null);
+  const [form, setForm] = useState({ name: '', slug: '', type: 'usecase', description: '', icon: '' });
+  const token = getStoredToken();
+
+  useEffect(() => {
+    fetch(`${API}/categories`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json()).then(d => setCategories(d.data || [])).finally(() => setLoading(false));
+  }, []);
+
+  const save = async () => {
+    const method = editing ? 'PUT' : 'POST';
+    const url = editing ? `${API}/categories/${editing.id}` : `${API}/categories`;
+    await fetch(url, {
+      method,
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(form),
+    });
+    const res = await fetch(`${API}/categories`, { headers: { Authorization: `Bearer ${token}` } });
+    const d = await res.json();
+    setCategories(d.data || []);
+    setShowForm(false);
+    setEditing(null);
+    setForm({ name: '', slug: '', type: 'usecase', description: '', icon: '' });
+  };
+
+  const del = async (id: number) => {
+    if (!confirm('Delete this category?')) return;
+    await fetch(`${API}/categories/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
+    setCategories(categories.filter(c => c.id !== id));
+  };
+
+  if (loading) return <div className="p-6 text-[#666]">Loading...</div>;
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-xl font-semibold text-white tracking-tight">Categories</h1>
+        <button onClick={() => { setShowForm(true); setEditing(null); setForm({ name: '', slug: '', type: 'usecase', description: '', icon: '' }); }}
+          className="h-9 px-4 rounded-lg bg-white text-[#0a0a0a] text-[13px] font-medium hover:bg-[#e8e8e8]">
+          + Add Category
+        </button>
+      </div>
+
+      {showForm && (
+        <div className="p-4 rounded-xl border border-[#7c3aed]/30 bg-[#7c3aed]/5 mb-6">
+          <div className="grid grid-cols-2 gap-4 mb-4">
+            <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value, slug: e.target.value.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') })} placeholder="Name" className="h-10 px-3 rounded-lg bg-[#111] border border-[#222] text-white text-[13px]" />
+            <input value={form.slug} onChange={e => setForm({ ...form, slug: e.target.value })} placeholder="slug" className="h-10 px-3 rounded-lg bg-[#111] border border-[#222] text-white text-[13px]" />
+            <select value={form.type} onChange={e => setForm({ ...form, type: e.target.value })} className="h-10 px-3 rounded-lg bg-[#111] border border-[#222] text-white text-[13px]">
+              <option value="usecase">Use Case</option>
+              <option value="resource_type">Resource Type</option>
+            </select>
+            <input value={form.icon} onChange={e => setForm({ ...form, icon: e.target.value })} placeholder="Emoji (e.g. 🔌)" className="h-10 px-3 rounded-lg bg-[#111] border border-[#222] text-white text-[13px]" />
+          </div>
+          <textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} placeholder="Description" rows={2} className="w-full mb-4 px-3 py-2 rounded-lg bg-[#111] border border-[#222] text-white text-[13px]" />
+          <div className="flex gap-2">
+            <button onClick={save} className="h-9 px-4 rounded-lg bg-white text-[#0a0a0a] text-[13px] font-medium">{editing ? 'Update' : 'Create'}</button>
+            <button onClick={() => { setShowForm(false); setEditing(null); }} className="h-9 px-4 rounded-lg border border-[#222] text-[#888] text-[13px]">Cancel</button>
+          </div>
+        </div>
+      )}
+
+      <div className="space-y-2">
+        {categories.length === 0 && <p className="text-[#666] text-[13px]">No categories yet</p>}
+        {categories.map(c => (
+          <div key={c.id} className="flex items-center justify-between p-4 rounded-lg border border-[#1a1a1a] bg-[#0d0d0d]">
+            <div className="flex items-center gap-3">
+              <span className="text-lg">{c.icon || '🏷'}</span>
+              <div>
+                <div className="text-[13px] font-medium text-white">{c.name}</div>
+                <div className="text-[11px] text-[#555]">{c.slug} · {c.type}</div>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => { setEditing(c); setForm({ name: c.name, slug: c.slug, type: c.type, description: c.description || '', icon: c.icon || '' }); setShowForm(true); }} className="text-[11px] text-[#888] hover:text-white">Edit</button>
+              <button onClick={() => del(c.id)} className="text-[11px] text-red-400 hover:text-red-300">Delete</button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }

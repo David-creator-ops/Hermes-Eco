@@ -12,6 +12,7 @@ function parse(row: any) {
   try { row.required_skills = JSON.parse(row.required_skills || '[]'); } catch { row.required_skills = []; }
   try { row.external_dependencies = JSON.parse(row.external_dependencies || '[]'); } catch { row.external_dependencies = []; }
   try { row.compatible_resources = JSON.parse(row.compatible_resources || '[]'); } catch { row.compatible_resources = []; }
+  try { row.security_scan = JSON.parse(row.security_scan || '[]'); } catch { row.security_scan = []; }
   return row;
 }
 

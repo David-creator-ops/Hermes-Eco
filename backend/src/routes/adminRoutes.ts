@@ -680,6 +680,68 @@ router.post('/security-scan', requireAuth('super_admin'), async (req: Request, r
   }
 });
 
+// ── Single Resource Security Scan ──
+router.post('/resources/:id/security-scan', requireAuth('super_admin'), async (req: Request, res: Response) => {
+  try {
+    const agent = await db.prepare('SELECT id, name, repository_url FROM agents WHERE id = ?').get(req.params.id) as any;
+    if (!agent) return res.status(404).json({ error: 'Resource not found' });
+
+    const match = agent.repository_url.match(/github\.com\/([^/]+)\/([^/?]+)/);
+    if (!match) return res.status(400).json({ error: 'Invalid GitHub URL' });
+    const [, owner, repo] = match;
+
+    const ghToken = process.env.GH_PAT || process.env.GITHUB_TOKEN || '';
+    const { securityScanRepository } = require('../db/security-scan');
+    const result = await securityScanRepository(owner, repo, ghToken);
+
+    await db.prepare(
+      "UPDATE agents SET security_scan = ?, security_verdict = ?, trust_level = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+    ).run(
+      JSON.stringify(result.findings),
+      result.verdict,
+      result.trust_level,
+      agent.id
+    );
+
+    res.json({ data: { verdict: result.verdict, findings: result.findings, trust_level: result.trust_level } });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Categories CRUD ──
+router.get('/categories', requireAuth('super_admin'), async (req: Request, res: Response) => {
+  const categories = await db.prepare('SELECT * FROM categories ORDER BY name').all();
+  res.json({ data: categories });
+});
+
+router.post('/categories', requireAuth('super_admin'), async (req: Request, res: Response) => {
+  const { name, slug, type, description, icon } = req.body;
+  if (!name || !slug) return res.status(400).json({ error: 'Name and slug required' });
+
+  const existing = await db.prepare('SELECT id FROM categories WHERE slug = ?').get(slug);
+  if (existing) return res.status(409).json({ error: 'Category already exists' });
+
+  const result = await db.prepare(
+    'INSERT INTO categories (name, slug, type, description, icon) VALUES (?, ?, ?, ?, ?)'
+  ).run(name, slug, type || 'usecase', description || '', icon || '');
+
+  res.json({ data: { id: result.lastInsertRowid, name, slug, type, description, icon } });
+});
+
+router.put('/categories/:id', requireAuth('super_admin'), async (req: Request, res: Response) => {
+  const { name, slug, type, description, icon } = req.body;
+  await db.prepare(
+    'UPDATE categories SET name = ?, slug = ?, type = ?, description = ?, icon = ? WHERE id = ?'
+  ).run(name, slug, type, description, icon, req.params.id);
+  res.json({ data: { message: 'Updated' } });
+});
+
+router.delete('/categories/:id', requireAuth('super_admin'), async (req: Request, res: Response) => {
+  await db.prepare('DELETE FROM categories WHERE id = ?').run(req.params.id);
+  res.json({ data: { message: 'Deleted' } });
+});
+
 // ── Seed DB ──
 router.post('/seed', requireAuth('super_admin'), async (req: Request, res: Response) => {
   try {
